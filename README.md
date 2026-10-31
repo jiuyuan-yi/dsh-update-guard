@@ -177,6 +177,10 @@ node test/e2e.mjs             # 真解包端到端
 
 `e2e` 需要一份待安装的更新和能解包的安装目录；没有时会打印 `SKIP` 并以 `0` 退出。
 
+## 真实环境验证
+
+模拟测试只证明流程逻辑。真实升级那天按 [docs/real-env-checklist.md](docs/real-env-checklist.md) 逐条走。
+
 ## 已知限制
 
 - 只在 Windows 上验证过（启动包装器依赖 `wscript.exe`）

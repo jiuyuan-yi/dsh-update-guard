@@ -209,5 +209,92 @@ console.log('[7] 结构缺失时，不相关的自定义字段必须保留')
 }
 
 console.log('')
+console.log('[8] 重置后先启动一次（自动还原关着）—— 记录不能被抹掉')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    // 关着自动还原先跑一次：记录下"有 alpha"
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: false }))
+    run(h, ['-NoStart'])
+
+    // 接着发生重置：清单清空、补丁被改名
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260101-000000'), '- id: alpha disabled: false '.repeat(20))
+    const bak = join(h.profile, 'package.json.bak-launcher-20260101-000000')
+    writeFileSync(bak, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    // 还原仍然关着，再启动一次 —— 这一次会看到空清单
+    run(h, ['-NoStart'])
+
+    const seen = JSON.parse(readFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), 'utf8'))
+    check('记录仍然记得 alpha', (seen.lastWithThirdParty ?? []).includes('alpha'), JSON.stringify(seen.lastWithThirdParty))
+    check('当前清单记录为空', (seen.bundles ?? []).length === 1, JSON.stringify(seen.bundles))
+
+    // 现在打开自动还原：应该能凭保留下来的证据还原
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+    run(h, ['-NoStart'])
+    check('恢复后重新出现 alpha', readBundles(h.profile).includes('alpha'), JSON.stringify(readBundles(h.profile)))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[9] 多份备份：优先选包含记录里那个插件的')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    addPlugin(h.profile, 'zeta')
+    // 更新（mtime 更近）的备份里没有 alpha，只有 zeta
+    const newer = join(h.profile, 'package.json.bak-other-20260102-000000')
+    writeFileSync(newer, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'zeta'] } } }))
+    const older = join(h.profile, 'package.json.bak-launcher-20260101-000000')
+    writeFileSync(older, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    const old = new Date(Date.now() - 3600 * 1000)
+    utimesSync(older, old, old)
+
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260102-000000'), 'x'.repeat(50))
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
+      at: new Date().toISOString(),
+      bundles: ['@deepseek-ai/dsh-base', 'alpha'],
+      lastWithThirdParty: ['alpha'],
+      patchSize: 400,
+    }))
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+
+    run(h, ['-NoStart'])
+    const b = readBundles(h.profile)
+    check('恢复了记录里的 alpha', b.includes('alpha'), JSON.stringify(b))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[10] 记录损坏 / 缺失 -> 不做任何推断')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260101-000000'), 'x'.repeat(50))
+    writeFileSync(join(h.profile, 'package.json.bak-launcher-20260101-000000'),
+      JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), '{ broken record')
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+
+    const r = run(h, ['-NoStart'])
+    check('不崩', !/Unhandled/.test(r.out), r.out.slice(0, 80))
+    check('没有恢复', !readBundles(h.profile).includes('alpha'), JSON.stringify(readBundles(h.profile)))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)
