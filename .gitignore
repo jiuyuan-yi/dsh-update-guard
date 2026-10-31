@@ -1,0 +1,19 @@
+# 运行时产物：每次都按本机状态重新生成，含绝对路径与历史记录
+/rescue/
+/.cache/
+/.restore-backups/
+
+# 备份文件（配置或快捷方式的快照，含本机信息）
+*.bak-*
+*.bak
+
+# 依赖与日志
+node_modules/
+*.log
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

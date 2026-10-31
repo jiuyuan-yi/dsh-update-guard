@@ -1,0 +1,8 @@
+# 统一按 LF 存储，检出时由各平台自行处理
+* text=auto eol=lf
+
+# 明确二进制
+*.png binary
+*.ico binary
+*.exe binary
+*.7z binary

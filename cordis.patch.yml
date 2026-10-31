@@ -1,0 +1,8 @@
+# Bundle patch layer: loads the guard's host half.
+#
+# The guard inspects a DOWNLOADED (not yet installed) update against the plugins
+# actually installed, and can disable exactly the entry ids that would break.
+# It never blocks an update, never installs one, and never rolls one back.
+- insert:
+    - id: dsh-update-guard
+      name: dsh-update-guard
