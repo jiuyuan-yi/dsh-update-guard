@@ -18,7 +18,7 @@ import {
 import { planRestore, applyRestore } from '../lib/restore.mjs'
 import { diagnoseRestore } from '../lib/diagnose.mjs'
 import { basename } from 'node:path'
-import { launcherState, removeLauncher } from '../lib/launcher.mjs'
+import { launcherState, removeLauncher, ensureLauncher } from '../lib/launcher.mjs'
 
 const PKG_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const CACHE_ROOT = join(PKG_DIR, '.cache')
@@ -157,6 +157,28 @@ if (cmd === 'check') {
     }
     process.exit(0)
   }
+  if (action === 'install') {
+    // 开必须是一个动作：改配置 + 生成脚本 + 接管图标，一次完成。
+    // 之前没有这个命令，只能手改快捷方式，结果配置说"关"、图标说"开"，
+    // 下一次启动就把脚本删了、图标悬空。
+    const r = ensureLauncher({ profileDir, pkgDir: PKG_DIR, manageShortcut: !flag('no-shortcut') })
+    if (!r.ok) fail('生成启动器失败: ' + r.reason)
+    const cfg = readConfig(profileDir)
+    writeConfig(profileDir, { ...cfg, installLauncher: true })
+    if (asJson) out({ ok: true, launcher: r, installLauncher: true })
+    else {
+      console.log('')
+      console.log('=== 已接管桌面快捷方式 ===')
+      console.log('')
+      console.log('  快捷方式  : ' + (r.shortcut ?? '(未修改)'))
+      console.log('  目标程序  : ' + (r.exe ?? '(自动检测)'))
+      console.log('  配置      : installLauncher = true')
+      console.log('')
+      console.log('  还原: node bin/guard.mjs launcher restore')
+      console.log('')
+    }
+    process.exit(0)
+  }
   if (action === 'restore' || action === 'uninstall') {
     const dry = flag('dry-run')
     const r = removeLauncher({ pkgDir: PKG_DIR, dryRun: dry })
@@ -178,7 +200,7 @@ if (cmd === 'check') {
     }
     process.exit(0)
   }
-  fail('未知子命令: ' + action + '（可用 status / restore / uninstall）')
+  fail('未知子命令: ' + action + '（可用 status / install / restore / uninstall）')
 } else if (cmd === 'config') {
   const key = opt('set')
   if (key === undefined) {
