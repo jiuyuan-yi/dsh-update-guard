@@ -123,6 +123,17 @@ scripts/、	est/、docs/ 和 client.js（浏览器半侧）不计入宿主面。
 
 部分检查**不会**显示成"没有发现不兼容"。
 
+## 测试用的环境变量
+
+启动器读三个环境变量，只用于测试与无人值守：
+
+| 变量 | 作用 |
+|---|---|
+| `DSH_LAUNCHER_PROFILE` | 指向别的 profile |
+| `DSH_LAUNCHER_EXE` / `DSH_LAUNCHER_ARGS` | 指向别的可执行文件与参数 |
+| `DSH_LAUNCHER_ANSWER` | 预置询问答案（`yes`/`no`），不弹框 |
+| `DSH_LAUNCHER_QUIET=1` | 完全不弹任何对话框，只写日志 |
+
 ## 解压器
 
 NSIS 外壳只有 7-Zip 系能读。探测顺序：
@@ -148,6 +159,8 @@ NSIS 外壳只有 7-Zip 系能读。探测顺序：
 ## 测试
 
 ```bash
+node test/all.mjs             # 一次跑全部；跳过会单独标 UNVERIFIED，不算通过
+node test/launcher-flow.mjs   # 假应用驱动真实启动器：正常启动/失败/恢复失败后再启动
 node test/tier-merge.mjs      # 两层结果必须合并且互不覆盖
 node test/cache-hit.mjs       # 缓存真的命中，不重复解包
 node test/launcher-repair.mjs # 损坏配置 / 结构缺失 / 主动精简 / 被重置 四种情况
@@ -169,6 +182,7 @@ node test/e2e.mjs             # 真解包端到端
 - 只在 Windows 上验证过（启动包装器依赖 `wscript.exe`）
 - 「接口面比对」只看 4 个共享 UI 模块，宿主侧 API 改动不在覆盖范围
 - 从没在真实版本升级上跑过完整流程
+- 自动还原的判定依据是**启动器自己记录的上次清单** + 补丁层证据；没有记录（首次运行）时不做任何推断
 - 还原时的插件校验只做结构检查（包在、package.json 可解析、声明了 `dsh.bundle`、patch 文件在），**不启动插件验证运行时行为**：结构完整但接口不兼容的插件，还原后仍可能出问题
 - 接口面比对只覆盖 4 个共享 UI 模块 + 宿主服务名；宿主侧 API 的**行为变化**（签名、语义）不在范围内
 

@@ -48,7 +48,7 @@ function run (h, args = []) {
       out: execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', h.ps1Path, ...args], {
         encoding: 'utf8',
         timeout: 60000,
-        env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: NOTEPAD },
+        env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: NOTEPAD, DSH_LAUNCHER_QUIET: '1' },
       }),
     }
   } catch (e) {
@@ -143,7 +143,13 @@ console.log('\n[5] 被重置（配置与备份同时写入）—— 应当还原
     writeFileSync(bak, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'] } } }))
     writeFileSync(join(h.profile, 'package.json'),
       JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
-    // 补丁层同时被改名、当前补丁只剩空壳 —— 这才是"被重置"的完整指纹
+    // 上次健康启动时看到过 alpha/beta —— 这是判定"突然清空"的事实依据
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
+      at: new Date().toISOString(),
+      bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'],
+      patchSize: 600,
+    }))
+    // 补丁层同时被改名、当前补丁只剩空壳 —— 官方按钮的第二个痕迹
     writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
     writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260101-000000'), '- id: alpha disabled: false '.repeat(20))
     writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
@@ -167,6 +173,12 @@ console.log('[6] 主动删光全部第三方 + 近期备份，但没有补丁层
     // 与当前配置同一秒写入：仅凭时间无法和"被重置"区分
     writeFileSync(join(h.profile, 'package.json'),
       JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    // 上次也看到 2 个插件：这次要证明拦住它的不是"没有记录"，而是补丁层完好
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
+      at: new Date().toISOString(),
+      bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'],
+      patchSize: 900,
+    }))
     // 补丁文件完好且内容正常：说明没有人动过补丁层
     writeFileSync(join(h.profile, 'cordis.patch.yml'), '- id: mine disabled: false '.repeat(30))
     writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
