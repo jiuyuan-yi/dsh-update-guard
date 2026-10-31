@@ -16,6 +16,8 @@ import {
   analyse, lockFromAnalysis, unlockAll, readConfig, writeConfig, defaultProfileDir, saveReport,
 } from '../lib/run.mjs'
 import { planRestore, applyRestore } from '../lib/restore.mjs'
+import { basename } from 'node:path'
+import { launcherState, removeLauncher } from '../lib/launcher.mjs'
 
 const PKG_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const CACHE_ROOT = join(PKG_DIR, '.cache')
@@ -119,6 +121,47 @@ if (cmd === 'check') {
       process.exit(2)
     }
   }
+} else if (cmd === 'launcher') {
+  // 位置参数：argv = [命令, 子命令, ...]，跳过 --开头的选项
+  const action = (argv.slice(1).find(a => !a.startsWith('--')) ?? 'status')
+  if (action === 'status') {
+    const st = launcherState({ pkgDir: PKG_DIR })
+    if (asJson) out({ ok: true, state: st })
+    else {
+      console.log('')
+      console.log('=== 启动器状态 ===')
+      console.log('')
+      console.log('  已生成      : ' + (st.generated ? '是' : '否'))
+      console.log('  快捷方式    : ' + (st.shortcut ?? '(未接管)'))
+      console.log('  当前指向    : ' + (st.target ?? '(未知)'))
+      console.log('  生成的文件  : ' + (st.files.length ? st.files.map(f => basename(f)).join(', ') : '无'))
+      console.log('  快捷方式备份: ' + st.backupCount + ' 份')
+      console.log('')
+    }
+    process.exit(0)
+  }
+  if (action === 'restore' || action === 'uninstall') {
+    const dry = flag('dry-run')
+    const r = removeLauncher({ pkgDir: PKG_DIR, dryRun: dry })
+    if (asJson) out({ ok: true, result: r })
+    else {
+      console.log('')
+      console.log('=== ' + (dry ? '预演：' : '') + '撤销启动器 ===')
+      console.log('')
+      if (r.note) console.log('  ' + r.note)
+      if (r.restoredShortcut) console.log(dry ? '  快捷方式  : 将指回应用主程序' : '  快捷方式  : 已指回应用主程序')
+      if (r.removed.length) r.removed.forEach(f => console.log('  已删除    : ' + basename(f)))
+      if (!dry && action === 'uninstall') {
+        const cfg = readConfig(profileDir)
+        writeConfig(profileDir, { ...cfg, installLauncher: false })
+        console.log('  配置      : installLauncher = false')
+      }
+      if (dry) console.log('  这是预演，没有改动任何文件。要执行请去掉 --dry-run。')
+      console.log('')
+    }
+    process.exit(0)
+  }
+  fail('未知子命令: ' + action + '（可用 status / restore / uninstall）')
 } else if (cmd === 'config') {
   const key = opt('set')
   if (key === undefined) {

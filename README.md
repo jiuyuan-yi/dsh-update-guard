@@ -71,6 +71,12 @@ node bin/guard.mjs restore        # 预演：配置被重置后会还原成什�
 node bin/guard.mjs restore --apply
 node bin/guard.mjs config --set autoLock --value true
 node bin/guard.mjs status
+
+# 启动器（自愈腿）
+node bin/guard.mjs launcher status           # 现在接管了什么
+node bin/guard.mjs launcher restore --dry-run # 预演：会把图标指回哪
+node bin/guard.mjs launcher restore          # 把快捷方式指回应用，删掉生成的脚本
+node bin/guard.mjs launcher uninstall        # 上面这一步 + 配置改回 installLauncher=false
 ```
 
 退出码：`0` 正常，`2` 发现不兼容，`1` 出错。
@@ -85,7 +91,7 @@ node bin/guard.mjs status
 | `autoLock` | `false` | 命中直接锁定，不询问 |
 | `maxAutoLock` | `3` | 一次最多锁几个 |
 | `autoRestore` | `true` | 配置被清空时从备份还原 |
-| `installLauncher` | `false` | 是否接管桌面快捷方式（自愈腿） |
+| `installLauncher` | `false` | 是否接管桌面快捷方式（自愈腿）。**默认关闭**；打开会改桌面图标，关掉会把图标还原 |
 
 ## 覆盖范围
 
@@ -98,10 +104,24 @@ node bin/guard.mjs status
 
 宿主服务名从安装包的 pp.asar 里提取，识别三种注册形式
 （ super(ctx,"name")、.provide("name")、.set("name",…) 以及
-egisterService/defineService/static service），并额外收集运行时里出现过的
+
+egisterService/defineService/static service），并额外收集运行时里出现过的
 字符串常量作宽松兜底——**宁可漏报，不可误报**。
 
 scripts/、	est/、docs/ 和 client.js（浏览器半侧）不计入宿主面。
+
+## 检查状态（不把"没查"说成"通过"）
+
+面板和 CLI 会明确区分四种状态：
+
+| 状态 | 含义 |
+|---|---|
+| **完整检查** | 版本声明 + 接口面都比对过 |
+| **部分检查** | 只比对了版本声明（没有解压器，或解包失败） |
+| **发现风险** | 有插件命中，附清单 |
+| **没有待装更新** | 当前没有已下载的更新 |
+
+部分检查**不会**显示成"没有发现不兼容"。
 
 ## 解压器
 
@@ -146,6 +166,8 @@ node test/e2e.mjs             # 真解包端到端
 - 只在 Windows 上验证过（启动包装器依赖 `wscript.exe`）
 - 「接口面比对」只看 4 个共享 UI 模块，宿主侧 API 改动不在覆盖范围
 - 从没在真实版本升级上跑过完整流程
+- 还原时的插件校验只做结构检查（包在、package.json 可解析、声明了 `dsh.bundle`、patch 文件在），**不启动插件验证运行时行为**：结构完整但接口不兼容的插件，还原后仍可能出问题
+- 接口面比对只覆盖 4 个共享 UI 模块 + 宿主服务名；宿主侧 API 的**行为变化**（签名、语义）不在范围内
 
 ## 许可
 
