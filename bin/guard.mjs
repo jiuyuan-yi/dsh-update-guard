@@ -323,24 +323,58 @@ function printReport (r) {
     return
   }
 
-  console.log(`发现 ${r.findings.length} 个插件可能在本次更新后失效：\n`)
-  for (const f of r.findings) {
-    console.log(`  ✗ ${f.plugin}`)
-    if (f.declared) {
-      console.log(`      声明: ${f.declared.field} = ${f.declared.range}`)
-      console.log(`      ${f.declared.detail}`)
-      console.log('      后果：加载器会直接跳过这个插件')
-    } else {
-      console.log(`      配置 id: ${f.ids.length > 0 ? f.ids.join(', ') : '(未声明，无法锁定)'}`)
-      for (const b of f.broken) {
-        console.log(`      缺少 ${b.moduleName.split('/').pop()}: ${b.missing.join(', ')}${b.note ? `  (${b.note})` : ''}`)
+  const hard = r.findings.filter(f => (f.broken ?? []).some(b => b.note !== 'service-absent'))
+  const soft = r.findings.filter(f => !hard.includes(f))
+
+  if (r.installedVersion !== undefined && r.version === r.installedVersion) {
+    console.log('')
+    console.log('注意：待安装版本就是当前已装版本（' + r.version + '），没有真正的新更新。')
+    console.log('下面的比对是当前版本对自己的自检，不代表"更新后会坏"。')
+    console.log('')
+  }
+
+  if (hard.length > 0) {
+    console.log('确定会失效：' + hard.length + ' 个')
+    console.log('')
+    for (const f of hard) {
+      console.log('  ✗ ' + f.plugin)
+      if (f.ids && f.ids.length) console.log('      配置 id: ' + f.ids.join(', '))
+      for (const b of f.broken ?? []) {
+        if (b.note === 'service-absent') continue
+        const what = Array.isArray(b.missing) ? b.missing.join(', ') : String(b.missing ?? '')
+        console.log('      缺少 ' + b.moduleName + ': ' + what)
       }
-      console.log('      后果：调用这些功能时会报错，通常表现为界面某处直接崩')
+      console.log('')
+    }
+  } else {
+    console.log('确定会失效：0 个')
+    console.log('')
+  }
+
+  if (soft.length > 0) {
+    console.log('仅提示（多数插件会自行降级，不锁定）：' + soft.length + ' 个')
+    for (const f of soft) {
+      const names = []
+      for (const b of f.broken ?? []) {
+        if (b.note === 'service-absent') {
+          names.push('宿主服务 ' + (Array.isArray(b.missing) ? b.missing.join('/') : b.missing))
+        }
+      }
+      for (const sname of f.softUnknown ?? []) names.push(sname)
+      console.log('  · ' + f.plugin + '  ——  ' + names.join('，'))
     }
     console.log('')
   }
-  console.log('未做任何改动。要只锁定这些插件：')
-  console.log(`    node "${join(PKG_DIR, 'bin', 'guard.mjs')}" lock\n`)
+
+  if (hard.length === 0) {
+    console.log('没有任何插件会因为这次更新而确定失效。')
+    console.log('')
+    process.exit(0)
+  }
+
+  console.log('要只锁定确定失效的这几个：')
+  console.log('    node "' + join(PKG_DIR, 'bin', 'guard.mjs') + '" lock')
+  console.log('')
 }
 
 function printLock (r, result) {
