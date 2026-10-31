@@ -24,7 +24,7 @@ const POWERSHELL = 'powershell.exe'
 
 function hasPowerShell () {
   try {
-    execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000 })
+    execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000, windowsHide: true })
     return true
   } catch { return false }
 }
@@ -51,7 +51,7 @@ function makeHarness () {
   // A uniquely named copy of powershell, so the "already running" check looks
   // for a process name that cannot collide with the launcher itself.
   const fakeApp = join(root, 'fakeapp.exe')
-  const realPs = execFileSync('where', ['powershell'], { encoding: 'utf8' })
+  const realPs = execFileSync('where', ['powershell'], { encoding: 'utf8', windowsHide: true })
     .split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean)[0]
   copyFileSync(realPs, fakeApp)
 
@@ -65,6 +65,7 @@ function run (h, { exitCode = 0, answer = 'no', extra = [] } = {}) {
     const out = execFileSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', h.ps1Path, ...extra], {
       encoding: 'utf8',
       timeout: 90000,
+      windowsHide: true,
       env: {
         ...process.env,
         DSH_LAUNCHER_PROFILE: h.profile,

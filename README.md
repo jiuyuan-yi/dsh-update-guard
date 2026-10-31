@@ -132,7 +132,7 @@ scripts/、	est/、docs/ 和 client.js（浏览器半侧）不计入宿主面。
 | `DSH_LAUNCHER_PROFILE` | 指向别的 profile |
 | `DSH_LAUNCHER_EXE` / `DSH_LAUNCHER_ARGS` | 指向别的可执行文件与参数 |
 | `DSH_LAUNCHER_ANSWER` | 预置询问答案（`yes`/`no`），不弹框 |
-| `DSH_LAUNCHER_QUIET=1` | 完全不弹任何对话框，只写日志 |
+| `DSH_LAUNCHER_QUIET=1` | 完全不弹任何对话框、不显示窗口，只写日志 |
 
 ## 解压器
 

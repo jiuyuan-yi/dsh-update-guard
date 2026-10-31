@@ -25,7 +25,7 @@ const NOTEPAD = 'C:/Windows/System32/notepad.exe'
 // 而不是让它失败——两者含义完全不同。
 function hasPowerShell () {
   try {
-    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000 })
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000, windowsHide: true })
     return true
   } catch { return false }
 }
@@ -61,6 +61,7 @@ function run (h, args = []) {
       out: execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', h.ps1Path, ...args], {
         encoding: 'utf8',
         timeout: 60000,
+        windowsHide: true,
         env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: NOTEPAD, DSH_LAUNCHER_QUIET: '1' },
       }),
     }
