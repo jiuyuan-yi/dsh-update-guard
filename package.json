@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-guard",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "type": "module",
   "description": "更新守卫：检查已装插件与新版本是否兼容，只锁定会失效的那几个；配置被重置时可还原",
@@ -16,7 +16,7 @@
   "dsh": {
     "id": "dsh-update-guard",
     "name": "更新守卫",
-    "version": "0.2.5",
+    "version": "0.2.6",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

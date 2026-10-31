@@ -143,12 +143,56 @@ console.log('\n[5] 被重置（配置与备份同时写入）—— 应当还原
     writeFileSync(bak, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'] } } }))
     writeFileSync(join(h.profile, 'package.json'),
       JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    // 补丁层同时被改名、当前补丁只剩空壳 —— 这才是"被重置"的完整指纹
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260101-000000'), '- id: alpha disabled: false '.repeat(20))
     writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
 
     run(h, ['-NoStart'])
     const bundles = readBundles(h.profile)
     check('恢复了第三方插件', bundles.includes('alpha'), JSON.stringify(bundles))
     check('官方还在', bundles.includes('@deepseek-ai/dsh-base'))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[6] 主动删光全部第三方 + 近期备份，但没有补丁层证据 —— 不能自动恢复')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    addPlugin(h.profile, 'beta')
+    const bak = join(h.profile, 'package.json.bak-launcher-20260101-000000')
+    writeFileSync(bak, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'] } } }))
+    // 与当前配置同一秒写入：仅凭时间无法和"被重置"区分
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    // 补丁文件完好且内容正常：说明没有人动过补丁层
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '- id: mine disabled: false '.repeat(30))
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+
+    run(h, ['-NoStart'])
+    const bundles = readBundles(h.profile)
+    check('没有自动恢复', !bundles.includes('alpha'), JSON.stringify(bundles))
+    check('配置保持官方-only', bundles.length === 1, JSON.stringify(bundles))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[7] 结构缺失时，不相关的自定义字段必须保留')
+{
+  const h = makeHarness()
+  try {
+    writeFileSync(join(h.profile, 'package.json'), JSON.stringify({
+      name: 'my-profile',
+      myCustomSetting: { keepMe: 42 },
+      dsh: { somethingElse: true },
+    }))
+    run(h, ['-Repair', '-NoStart'])
+    const after = JSON.parse(readFileSync(join(h.profile, 'package.json'), 'utf8').replace(/^﻿/, ''))
+    check('顶层自定义字段还在', after.myCustomSetting?.keepMe === 42, JSON.stringify(after.myCustomSetting))
+    check('dsh 下的其它字段还在', after.dsh?.somethingElse === true)
+    check('补出了 bundles', Array.isArray(after.dsh?.profile?.bundles))
   } finally { rmSync(h.root, { recursive: true, force: true }) }
 }
 
