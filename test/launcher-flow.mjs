@@ -73,6 +73,7 @@ function run (h, { exitCode = 0, answer = 'no', extra = [] } = {}) {
         DSH_LAUNCHER_ARGS: '-NoProfile -Command "' + command + '"',
         DSH_LAUNCHER_ANSWER: answer,
         DSH_LAUNCHER_QUIET: '1',
+        DSH_LAUNCHER_TEST_HIDE_WINDOW: '1',
       },
     })
     return { code: 0, out }

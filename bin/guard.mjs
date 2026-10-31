@@ -16,6 +16,7 @@ import {
   analyse, lockFromAnalysis, unlockAll, readConfig, writeConfig, defaultProfileDir, saveReport,
 } from '../lib/run.mjs'
 import { planRestore, applyRestore } from '../lib/restore.mjs'
+import { diagnoseRestore } from '../lib/diagnose.mjs'
 import { basename } from 'node:path'
 import { launcherState, removeLauncher } from '../lib/launcher.mjs'
 
@@ -121,6 +122,22 @@ if (cmd === 'check') {
       process.exit(2)
     }
   }
+} else if (cmd === 'diagnose') {
+  const d = diagnoseRestore(profileDir)
+  if (asJson) out({ ok: true, ...d })
+  else {
+    console.log('')
+    console.log('=== 自动还原判定 ===')
+    console.log('')
+    for (const c of d.conditions) {
+      console.log('  ' + (c.pass ? '过' : '不过') + '  ' + c.label.padEnd(24) + c.detail)
+    }
+    console.log('')
+    console.log('结论: ' + d.note)
+    console.log('profile: ' + profileDir)
+    console.log('')
+  }
+  process.exit(0)
 } else if (cmd === 'launcher') {
   // 位置参数：argv = [命令, 子命令, ...]，跳过 --开头的选项
   const action = (argv.slice(1).find(a => !a.startsWith('--')) ?? 'status')
