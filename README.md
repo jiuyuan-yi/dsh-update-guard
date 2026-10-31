@@ -162,6 +162,7 @@ NSIS 外壳只有 7-Zip 系能读。探测顺序：
 ```bash
 node test/all.mjs             # 一次跑全部；跳过会单独标 UNVERIFIED，不算通过
 node test/launcher-flow.mjs   # 假应用驱动真实启动器：正常启动/失败/恢复失败后再启动
+node test/diagnose-agreement.mjs # 诊断结论必须与启动器的真实行为一致
 node test/tier-merge.mjs      # 两层结果必须合并且互不覆盖
 node test/cache-hit.mjs       # 缓存真的命中，不重复解包
 node test/launcher-repair.mjs # 损坏配置 / 结构缺失 / 主动精简 / 被重置 四种情况

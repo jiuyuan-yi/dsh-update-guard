@@ -22,6 +22,13 @@ function profile () {
   return dir
 }
 
+function installPlugin (dir, name) {
+  const p = join(dir, 'node_modules', ...name.split('/'))
+  mkdirSync(p, { recursive: true })
+  writeFileSync(join(p, 'package.json'), JSON.stringify({ name, version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(p, 'cordis.patch.yml'), 'x')
+}
+
 function state (dir, { bundles, seen, patchSize, patchBak, cfgBak, autoRestore = true }) {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'p', dsh: { profile: { bundles } } }))
   if (seen !== undefined) writeFileSync(join(dir, '.dsh-update-guard-lastseen.json'), JSON.stringify(seen))
@@ -31,6 +38,9 @@ function state (dir, { bundles, seen, patchSize, patchBak, cfgBak, autoRestore =
     writeFileSync(p, 'y'.repeat(50))
     if (patchBak !== 'now') utimesSync(p, new Date(patchBak), new Date(patchBak))
   }
+  // 备份里的 alpha 必须真的在磁盘上，否则"还原"不成立——启动器也是这么判的
+  installPlugin(dir, 'alpha')
+  installPlugin(dir, '@deepseek-ai/dsh-base')
   if (cfgBak) {
     writeFileSync(join(dir, 'package.json.bak-launcher-20260101-000000'),
       JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
