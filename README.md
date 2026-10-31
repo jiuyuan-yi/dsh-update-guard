@@ -148,6 +148,9 @@ NSIS 外壳只有 7-Zip 系能读。探测顺序：
 ## 测试
 
 ```bash
+node test/tier-merge.mjs      # 两层结果必须合并且互不覆盖
+node test/cache-hit.mjs       # 缓存真的命中，不重复解包
+node test/launcher-repair.mjs # 损坏配置 / 结构缺失 / 主动精简 / 被重置 四种情况
 node test/compat.mjs          # 版本范围与声明检查
 node test/restore.mjs         # 外科式还原
 node test/routes.mjs          # 面板接口
