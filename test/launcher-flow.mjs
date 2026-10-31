@@ -20,7 +20,18 @@ import { execFileSync } from 'node:child_process'
 import { ensureLauncher } from '../lib/launcher.mjs'
 
 const PKG = dirname(dirname(fileURLToPath(import.meta.url)))
-const POWERSHELL = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+const POWERSHELL = 'powershell.exe'
+
+function hasPowerShell () {
+  try {
+    execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000 })
+    return true
+  } catch { return false }
+}
+if (!hasPowerShell()) {
+  console.log('SKIP: 当前环境没有可用的 Windows PowerShell，本组未执行')
+  process.exit(0)
+}
 
 let failures = 0
 function check (label, cond, detail = '') {
@@ -40,7 +51,9 @@ function makeHarness () {
   // A uniquely named copy of powershell, so the "already running" check looks
   // for a process name that cannot collide with the launcher itself.
   const fakeApp = join(root, 'fakeapp.exe')
-  copyFileSync(POWERSHELL, fakeApp)
+  const realPs = execFileSync('where', ['powershell'], { encoding: 'utf8' })
+    .split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean)[0]
+  copyFileSync(realPs, fakeApp)
 
   return { root, pkg, profile, fakeApp, ps1Path: join(pkg, 'rescue', 'dsh-launch.ps1') }
 }
@@ -113,8 +126,13 @@ console.log('\n[2] 启动失败 + 用户选“否” -> 不动配置')
   const h = makeHarness()
   try {
     seedProfile(h.profile)
+    const cfgPath = join(h.profile, 'package.json')
+    const before = readFileSync(cfgPath)
     const r = run(h, { exitCode: 3, answer: 'no' })
+    const after = readFileSync(cfgPath)
     check('最终以失败退出', r.code !== 0, 'code=' + r.code)
+    check('配置文件逐字节未变', Buffer.compare(before, after) === 0,
+      before.length + ' -> ' + after.length + ' 字节')
     check('插件列表原样', bundles(h.profile).includes('alpha'), JSON.stringify(bundles(h.profile)))
     check('没有生成还原备份', !existsSync(join(h.profile, 'package.json.bak-restore-')) &&
       !readdirHas(h.profile, 'package.json.bak-launcher-'))

@@ -21,6 +21,19 @@ import { ensureLauncher } from '../lib/launcher.mjs'
 const PKG = dirname(dirname(fileURLToPath(import.meta.url)))
 const NOTEPAD = 'C:/Windows/System32/notepad.exe'
 
+// 这些用例驱动真实的 PowerShell 脚本。环境不具备时明确标记为未验证，
+// 而不是让它失败——两者含义完全不同。
+function hasPowerShell () {
+  try {
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 20000 })
+    return true
+  } catch { return false }
+}
+if (!hasPowerShell()) {
+  console.log('SKIP: 当前环境没有可用的 Windows PowerShell，本组未执行')
+  process.exit(0)
+}
+
 let failures = 0
 function check (label, cond, detail = '') {
   console.log(`${cond ? '  PASS' : '  FAIL'}  ${label}${detail ? '  ' + detail : ''}`)
@@ -147,7 +160,9 @@ console.log('\n[5] 被重置（配置与备份同时写入）—— 应当还原
     writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
       at: new Date().toISOString(),
       bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'],
-      patchSize: 600,
+      lastWithThirdParty: ['alpha', 'beta'],
+      lastWithThirdPartyAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+      patchSize: 900,
     }))
     // 补丁层同时被改名、当前补丁只剩空壳 —— 官方按钮的第二个痕迹
     writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
@@ -177,6 +192,8 @@ console.log('[6] 主动删光全部第三方 + 近期备份，但没有补丁层
     writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
       at: new Date().toISOString(),
       bundles: ['@deepseek-ai/dsh-base', 'alpha', 'beta'],
+      lastWithThirdParty: ['alpha', 'beta'],
+      lastWithThirdPartyAt: new Date(Date.now() - 3600 * 1000).toISOString(),
       patchSize: 900,
     }))
     // 补丁文件完好且内容正常：说明没有人动过补丁层
@@ -216,6 +233,8 @@ console.log('[8] 重置后先启动一次（自动还原关着）—— 记录�
     addPlugin(h.profile, 'alpha')
     writeFileSync(join(h.profile, 'package.json'),
       JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    // 重置前的正常状态：补丁里有内容
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '- id: mine disabled: false '.repeat(35))
     // 关着自动还原先跑一次：记录下"有 alpha"
     writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: false }))
     run(h, ['-NoStart'])
@@ -264,6 +283,7 @@ console.log('[9] 多份备份：优先选包含记录里那个插件的')
       at: new Date().toISOString(),
       bundles: ['@deepseek-ai/dsh-base', 'alpha'],
       lastWithThirdParty: ['alpha'],
+      lastWithThirdPartyAt: new Date(Date.now() - 3600 * 1000).toISOString(),
       patchSize: 400,
     }))
     writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
@@ -292,6 +312,67 @@ console.log('[10] 记录损坏 / 缺失 -> 不做任何推断')
     const r = run(h, ['-NoStart'])
     check('不崩', !/Unhandled/.test(r.out), r.out.slice(0, 80))
     check('没有恢复', !readBundles(h.profile).includes('alpha'), JSON.stringify(readBundles(h.profile)))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[11] 很久以前的补丁备份不能当成这次重置的证据')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    // 一次旧重置留下的补丁备份（早于最近一次健康记录）
+    const oldBak = join(h.profile, 'cordis.patch.yml.bak-20250101-000000')
+    writeFileSync(oldBak, 'old reset evidence '.repeat(40))
+    const longAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+    utimesSync(oldBak, longAgo, longAgo)
+
+    // 最近一次健康记录：当时有 alpha，补丁 900 字节
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
+      at: new Date(Date.now() - 3600 * 1000).toISOString(),
+      bundles: ['@deepseek-ai/dsh-base', 'alpha'],
+      lastWithThirdParty: ['alpha'],
+      lastWithThirdPartyAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+      patchSize: 900,
+    }))
+
+    // 之后用户主动清空第三方，补丁也自己删了内容
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'package.json.bak-launcher-20260101-000000'),
+      JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+
+    run(h, ['-NoStart'])
+    check('没有拿旧备份当证据恢复', !readBundles(h.profile).includes('alpha'), JSON.stringify(readBundles(h.profile)))
+  } finally { rmSync(h.root, { recursive: true, force: true }) }
+}
+
+console.log('')
+console.log('[12] 补丁备份晚于记录、且补丁确实变小 -> 才是本次重置')
+{
+  const h = makeHarness()
+  try {
+    addPlugin(h.profile, 'alpha')
+    writeFileSync(join(h.profile, '.dsh-update-guard-lastseen.json'), JSON.stringify({
+      at: new Date(Date.now() - 3600 * 1000).toISOString(),
+      bundles: ['@deepseek-ai/dsh-base', 'alpha'],
+      lastWithThirdParty: ['alpha'],
+      lastWithThirdPartyAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+      patchSize: 900,
+    }))
+    // 本次重置：补丁被改名（就是现在），当前补丁变空
+    writeFileSync(join(h.profile, 'cordis.patch.yml.bak-20260101-000000'), 'moved by reset '.repeat(40))
+    writeFileSync(join(h.profile, 'cordis.patch.yml'), '')
+    writeFileSync(join(h.profile, 'package.json'),
+      JSON.stringify({ name: 'p', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
+    writeFileSync(join(h.profile, 'package.json.bak-launcher-20260101-000000'),
+      JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'alpha'] } } }))
+    writeFileSync(join(h.profile, '.dsh-update-guard.json'), JSON.stringify({ autoRestore: true }))
+
+    run(h, ['-NoStart'])
+    check('还原了 alpha', readBundles(h.profile).includes('alpha'), JSON.stringify(readBundles(h.profile)))
   } finally { rmSync(h.root, { recursive: true, force: true }) }
 }
 
