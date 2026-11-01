@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-guard",
-  "version": "0.2.15",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "更新守卫：检查已装插件与新版本是否兼容，只锁定会失效的那几个；配置被重置时可还原",
@@ -25,5 +25,17 @@
       "immediately": true
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiuyuan-yi/dsh-update-guard.git"
+  },
+  "homepage": "https://github.com/jiuyuan-yi/dsh-update-guard#readme",
+  "bugs": {
+    "url": "https://github.com/jiuyuan-yi/dsh-update-guard/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }
