@@ -24,8 +24,11 @@ for (const file of files) {
   const r = spawnSync(process.execPath, [join(DIR, file)], { encoding: 'utf8', timeout: 180000 })
   const out = (r.stdout ?? '') + (r.stderr ?? '')
   let status = 'FAIL'
-  if (/ALL PASS/.test(out)) status = 'PASS'
-  else if (/^SKIP:|SKIP:/m.test(out) && r.status === 0) status = 'UNVERIFIED'
+  // SKIP is checked FIRST. A test that skips commonly also prints
+  // "ALL PASS (skipped)", and deciding PASS first made a completely unexecuted
+  // test look green — which inflated this suite's headline number.
+  if (/SKIP:/.test(out) && r.status === 0) status = 'UNVERIFIED'
+  else if (/ALL PASS/.test(out)) status = 'PASS'
   else if (r.status === 0 && /生成成功|"ok": true/.test(out)) status = 'PASS'
   rows.push({ file, status, code: r.status, out })
 }

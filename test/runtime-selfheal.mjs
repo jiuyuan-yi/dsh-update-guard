@@ -75,10 +75,15 @@ console.log('\n[3] 生成的 ps1 里路径没有被 JS 转义毁掉')
   if (typeof text === 'string') {
     const bs = '\\'
     const want = [
-      ['SKILL.md 探针路径', 'resources' + bs + 'runtime' + bs + 'office-skills' + bs + 'office' + bs + 'SKILL.md'],
+      // The probe is assembled with Join-Path now, so the full path never
+      // appears as one literal. Check the two pieces instead.
+      ['runtime 根路径', 'resources' + bs + 'runtime'],
+      ['SKILL.md 探针（相对 runtime）', 'office-skills' + bs + 'office' + bs + 'SKILL.md'],
+      ['四个子树完整性检查', 'primary-runtime'],
       ['NSIS 内层包名', '$PLUGINSDIR' + bs + 'app-64.7z'],
       ['解包 filter', 'resources' + bs + 'runtime' + bs + '*'],
       ['注册表键', 'HKLM:' + bs + 'SOFTWARE' + bs + '7-Zip'],
+      ['7-Zip 退出码检查', '$LASTEXITCODE'],
     ]
     for (const [label, needle] of want) {
       check(label, text.includes(needle), needle)

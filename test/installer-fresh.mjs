@@ -96,35 +96,44 @@ try {
       typeof second?.text === 'string' && second.text.length > 1000)
   }
 
-  console.log('\n[3] 来源标记必须绑定安装包身份')
+  console.log('\n[3] 来源标记必须绑定安装包身份（用 keepTemp 造出可复用的缓存）')
   {
-    const work = join(cacheRoot, 'extract-work')
+    // The previous version only exercised this when cleanup had already failed to
+    // delete the asar, so on a clean machine it silently fell back to grepping
+    // the source. `keepTemp: true` forces the "extracted and still on disk"
+    // state that the reuse logic actually has to handle.
+    const keepRoot = join(cacheRoot, 'keep-case')
+    mkdirSync(keepRoot, { recursive: true })
+
+    const first = readShellBundleFromInstaller(pending.installer, { cacheRoot: keepRoot, keepTemp: true })
+    const work = join(keepRoot, 'extract-work')
     const stamp = join(work, '.source')
     const asar = join(work, 'app.asar')
 
-    if (!existsSync(stamp) || !existsSync(asar)) {
-      console.log('  (清理成功、无残留，改为验证源码约束)')
-      const src = readFileSync(join(PKG, 'lib', 'installer.mjs'), 'utf8')
-      check('解包后写入来源标记', /writeFileSync\(sourceStamp, mySourceKey/.test(src))
-      check('复用前比对来源标记', /stamp === mySourceKey/.test(src))
-    } else {
-      const good = readFileSync(stamp, 'utf8').trim()
-      check('标记等于当前安装包的 cacheKey', good === cacheKeyOf(pending.installer), good)
+    check('keepTemp 保留了 app.asar', existsSync(asar))
+    check('keepTemp 保留了 .source', existsSync(stamp))
+    check('标记等于当前安装包的 cacheKey',
+      existsSync(stamp) && readFileSync(stamp, 'utf8').trim() === cacheKeyOf(pending.installer))
 
-      // 伪造一个不匹配的身份，下一次调用必须重新解包，而不是拿这份旧文件糊弄。
+    // A matching stamp must reuse the file rather than re-extract it. mtime is
+    // the evidence: a re-extraction rewrites the file and moves it.
+    const before = existsSync(asar) ? statSync(asar).mtimeMs : 0
+    const second = readShellBundleFromInstaller(pending.installer, { cacheRoot: keepRoot, keepTemp: true })
+    const after = existsSync(asar) ? statSync(asar).mtimeMs : 0
+    check('同包第二次复用缓存（asar 未被重写）', before !== 0 && before === after,
+      `${before} -> ${after}`)
+    check('复用结果与首次一致', second.sha256 === first.sha256)
+
+    // A stamp naming a different installer must force re-extraction.
+    if (existsSync(stamp)) {
       writeFileSync(stamp, 'not-this-installer', 'utf8')
-      let after
-      let error
-      const t0 = Date.now()
-      try {
-        after = readShellBundleFromInstaller(pending.installer, { cacheRoot })
-      } catch (e) { error = e }
-      const ms = Date.now() - t0
-
-      check('身份不符时重新解包而不是复用', error === undefined && typeof after?.text === 'string',
-        error === undefined ? `${ms}ms` : String(error?.message ?? error))
+      const third = readShellBundleFromInstaller(pending.installer, { cacheRoot: keepRoot, keepTemp: true })
+      check('身份不符时重新解包并成功',
+        typeof third.text === 'string' && third.text.length > 1000)
       check('重新解包后标记被改回正确值',
-        existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() === cacheKeyOf(pending.installer) : true)
+        existsSync(stamp) && readFileSync(stamp, 'utf8').trim() === cacheKeyOf(pending.installer))
+    } else {
+      check('身份不符时重新解包并成功', false, '缺少 .source，无法验证')
     }
   }
 

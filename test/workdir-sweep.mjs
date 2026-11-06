@@ -64,33 +64,41 @@ function makeCache () {
   rmSync(root, { recursive: true, force: true })
 }
 
-// ④ The shared directory is swept only when its marker's process is gone.
+// ④ The shared directory follows the LOCK, not a marker inside it.
+//
+// Ownership has to live outside `extract-work`: otherwise the instant between
+// "created the directory" and "wrote the marker" looks like debris, and a
+// concurrent sweep can delete a directory someone is actively using.
 {
   const root = makeCache()
   const shared = join(root, 'extract-work')
+  const lockDir = join(root, '.extract.lock')
   mkdirSync(shared, { recursive: true })
   writeFileSync(join(shared, 'app.asar'), 'x'.repeat(512))
 
-  // live marker -> keep
-  writeFileSync(join(shared, '.in-use'), String(process.pid))
+  // A live lock holds the directory even though the directory itself has no marker.
+  mkdirSync(lockDir, { recursive: true })
+  writeFileSync(join(lockDir, 'pid'), String(process.pid))
   let r = sweepStaleWorkDirs(root)
   check('活锁时保留共享目录', existsSync(shared) && !r.removed.includes('extract-work'))
+  check('活锁时保留锁目录', existsSync(lockDir))
 
-  // dead marker -> remove
-  writeFileSync(join(shared, '.in-use'), '999999')
+  // A dead lock means nobody owns it: both the lock and the work dir are debris.
+  writeFileSync(join(lockDir, 'pid'), '999999')
   r = sweepStaleWorkDirs(root)
   check('死锁时清掉共享目录', !existsSync(shared), JSON.stringify(r.removed))
+  check('死锁时清掉锁目录', !existsSync(lockDir))
   rmSync(root, { recursive: true, force: true })
 }
 
-// ⑤ A shared directory with no marker is treated as free (crash recovery).
+// ⑤ A shared directory with no lock at all is treated as free (crash recovery).
 {
   const root = makeCache()
   const shared = join(root, 'extract-work')
   mkdirSync(shared, { recursive: true })
   writeFileSync(join(shared, 'app.asar'), 'x')
   const r = sweepStaleWorkDirs(root)
-  check('无标记的共享目录视为可清', !existsSync(shared), JSON.stringify(r.removed))
+  check('无锁的共享目录视为可清', !existsSync(shared), JSON.stringify(r.removed))
   rmSync(root, { recursive: true, force: true })
 }
 
@@ -132,25 +140,46 @@ function makeCache () {
 {
   const src = readFileSync(join(PKG, 'lib', 'installer.mjs'), 'utf8')
 
-  const cacheCheckAt = src.indexOf('cachedAsar')
-  // Anchor on the CALL inside readShellBundleFromInstaller, not on the message
-  // string: that text now also lives in the standalone acquireLock helper near
-  // the top of the file, which would make an index comparison meaningless.
-  const lockCallAt = src.indexOf('acquireLock(lockFile)')
+  // Anchor on the REUSE STATEMENT, not on the `cachedAsar` declaration: the
+  // declaration sits above the lock, the decision has to be below it.
+  const reuseAt = src.indexOf('if (shared && existsSync(cachedAsar))')
+  const lockCallAt = src.indexOf('acquireLockWithRetry(lockDir, lockPid)')
+  const mkdirWorkAt = src.indexOf('mkdirSync(work, { recursive: true })')
   const guardAt = src.indexOf('if (asarPath === undefined)')
 
-  check('有 cachedAsar 复用逻辑', cacheCheckAt > 0)
-  check('复用判断在加锁之前', cacheCheckAt > 0 && lockCallAt > 0 && cacheCheckAt < lockCallAt,
-    `cache=${cacheCheckAt} lock=${lockCallAt}`)
-  check('解包与加锁都包在 asarPath === undefined 里', guardAt > 0 && guardAt < lockCallAt,
-    `guard=${guardAt} lock=${lockCallAt}`)
-  check('锁是原子创建（wx）', /flag:\s*'wx'/.test(src))
-  check('不再把标记写回去冒充忙碌', !/writeFileSync\(lockFile, String\(process\.pid\)[\s\S]{0,200}removeWorkDir/.test(src))
+  check('有 cachedAsar 复用逻辑', reuseAt > 0)
+  check('复用判断也在锁内', lockCallAt > 0 && reuseAt > lockCallAt,
+    `lock=${lockCallAt} reuse=${reuseAt}`)
+  check('先加锁、后创建 work 目录',
+    lockCallAt > 0 && mkdirWorkAt > 0 && lockCallAt < mkdirWorkAt,
+    `lock=${lockCallAt} mkdir=${mkdirWorkAt}`)
+  check('解包仍在 asarPath === undefined 分支里', guardAt > 0 && guardAt < mkdirWorkAt,
+    `guard=${guardAt} mkdir=${mkdirWorkAt}`)
 
-  // The reuse path must not read the marker at all — it compares the source stamp.
-  const reuseBlock = src.slice(cacheCheckAt, guardAt > 0 ? guardAt : cacheCheckAt + 900)
-  check('复用路径不读锁标记', !/readFileSync\(lockFile/.test(reuseBlock))
-  check('复用前比对来源标记', /stamp === mySourceKey/.test(reuseBlock))
+  // The lock is a directory created with mkdir (atomic everywhere), not a file
+  // written with flag 'wx' (atomic only for the first creation). Scope the
+  // negative check to the function body so the explanatory comment above it,
+  // which quotes the old code, does not trip it.
+  const lockFnStart = src.indexOf('function acquireLock (')
+  const lockFnEnd = src.indexOf('function acquireLockWithRetry')
+  const lockBody = lockFnStart > 0 && lockFnEnd > lockFnStart
+    ? src.slice(lockFnStart, lockFnEnd)
+    : ''
+  check('锁用 mkdir 原子创建', /mkdirSync\(lockDir\)/.test(lockBody))
+  check('acquireLock 内部不再用 wx 写文件当锁', lockBody.length > 0 && !/flag:\s*'wx'/.test(lockBody))
+  check('锁目录独立于 work 目录', /LOCK_DIR_NAME\s*=\s*'\.extract\.lock'/.test(src))
+
+  // Stale reclaim must re-race; a plain overwrite let two processes both win.
+  check('过期锁是删掉后重新 mkdir 竞争',
+    /rmSync\(lockDir[\s\S]{0,200}claim\(\)/.test(src))
+  check('非 EEXIST 的创建失败会抛错（不无锁运行）',
+    /cannot create extraction lock/.test(src) && !/if \(error\?\.code !== 'EEXIST'\) return/.test(src))
+
+  // Sweep decides ownership from the lock directory, not from a marker inside work.
+  check('sweep 用锁目录判断占用', /const lockLive = lockHolder !== undefined && processIsAlive\(lockHolder\)/.test(src))
+  check('sweep 会回收死掉的锁目录', /name === LOCK_DIR_NAME/.test(src))
+
+  check('复用前比对来源标记', /stamp === mySourceKey/.test(src))
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`)
