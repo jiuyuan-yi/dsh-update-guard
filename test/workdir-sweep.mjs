@@ -121,5 +121,32 @@ function makeCache () {
   rmSync(root, { recursive: true, force: true })
 }
 
+// ⑧ A leftover app.asar is a cache to reuse, not a lock to honour.
+//
+// The bug: after a successful extraction, Windows often cannot delete app.asar
+// (the host read it and still holds the handle), so the cleanup left the marker
+// behind pointing at a process that was merely alive. The next run read
+// "holder alive" as "another extraction is in progress" and degraded to
+// declared-only — surface never came from the installer, so e2e detected
+// nothing and failed 7 assertions.
+{
+  const src = readFileSync(join(PKG, 'lib', 'installer.mjs'), 'utf8')
+
+  const cacheCheckAt = src.indexOf('cachedAsar')
+  const busyAt = src.indexOf('another extraction is in progress')
+  const guardAt = src.indexOf('if (asarPath === undefined)')
+
+  check('有 cachedAsar 复用逻辑', cacheCheckAt > 0)
+  check('复用判断在 busy 检查之前', cacheCheckAt > 0 && busyAt > 0 && cacheCheckAt < busyAt,
+    `cache=${cacheCheckAt} busy=${busyAt}`)
+  check('解包与加锁都包在 asarPath === undefined 里', guardAt > 0 && guardAt < busyAt,
+    `guard=${guardAt} busy=${busyAt}`)
+  check('不再把标记写回去冒充忙碌', !/writeFileSync\(lockFile, String\(process\.pid\)[\s\S]{0,200}removeWorkDir/.test(src))
+
+  // The reuse path must not require the marker at all.
+  const reuseBlock = src.slice(cacheCheckAt, guardAt > 0 ? guardAt : cacheCheckAt + 800)
+  check('复用路径不读锁标记', !/readFileSync\(lockFile/.test(reuseBlock))
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`)
 process.exit(failures === 0 ? 0 : 1)
