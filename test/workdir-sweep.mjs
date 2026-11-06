@@ -133,19 +133,24 @@ function makeCache () {
   const src = readFileSync(join(PKG, 'lib', 'installer.mjs'), 'utf8')
 
   const cacheCheckAt = src.indexOf('cachedAsar')
-  const busyAt = src.indexOf('another extraction is in progress')
+  // Anchor on the CALL inside readShellBundleFromInstaller, not on the message
+  // string: that text now also lives in the standalone acquireLock helper near
+  // the top of the file, which would make an index comparison meaningless.
+  const lockCallAt = src.indexOf('acquireLock(lockFile)')
   const guardAt = src.indexOf('if (asarPath === undefined)')
 
   check('有 cachedAsar 复用逻辑', cacheCheckAt > 0)
-  check('复用判断在 busy 检查之前', cacheCheckAt > 0 && busyAt > 0 && cacheCheckAt < busyAt,
-    `cache=${cacheCheckAt} busy=${busyAt}`)
-  check('解包与加锁都包在 asarPath === undefined 里', guardAt > 0 && guardAt < busyAt,
-    `guard=${guardAt} busy=${busyAt}`)
+  check('复用判断在加锁之前', cacheCheckAt > 0 && lockCallAt > 0 && cacheCheckAt < lockCallAt,
+    `cache=${cacheCheckAt} lock=${lockCallAt}`)
+  check('解包与加锁都包在 asarPath === undefined 里', guardAt > 0 && guardAt < lockCallAt,
+    `guard=${guardAt} lock=${lockCallAt}`)
+  check('锁是原子创建（wx）', /flag:\s*'wx'/.test(src))
   check('不再把标记写回去冒充忙碌', !/writeFileSync\(lockFile, String\(process\.pid\)[\s\S]{0,200}removeWorkDir/.test(src))
 
-  // The reuse path must not require the marker at all.
-  const reuseBlock = src.slice(cacheCheckAt, guardAt > 0 ? guardAt : cacheCheckAt + 800)
+  // The reuse path must not read the marker at all — it compares the source stamp.
+  const reuseBlock = src.slice(cacheCheckAt, guardAt > 0 ? guardAt : cacheCheckAt + 900)
   check('复用路径不读锁标记', !/readFileSync\(lockFile/.test(reuseBlock))
+  check('复用前比对来源标记', /stamp === mySourceKey/.test(reuseBlock))
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`)

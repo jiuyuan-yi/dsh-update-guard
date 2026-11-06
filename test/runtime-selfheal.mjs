@@ -59,10 +59,12 @@ console.log('\n[1] 源码含 runtime 自愈的两个函数')
 
 console.log('\n[2] 7-Zip 探测覆盖四种来源')
 {
-  check('环境变量 DSH_7Z', /env:DSH_7Z/.test(SRC))
+  check('环境变量 DSH_7Z', /DSH_7Z/.test(SRC))
+  check('环境变量 DSH_7ZA（与 installer.mjs 一致）', /DSH_7ZA/.test(SRC))
   check('随包 vendor 副本', /vendor/.test(SRC) && /7z\.exe/.test(SRC))
   check('注册表键', /SOFTWARE.*7-Zip/.test(SRC))
   check('PATH 兜底', /Get-Command/.test(SRC))
+  check('常见安装目录（含 NanaZip）', /NanaZip/.test(SRC))
 }
 
 console.log('\n[3] 生成的 ps1 里路径没有被 JS 转义毁掉')

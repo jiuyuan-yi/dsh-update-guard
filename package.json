@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-guard",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "type": "module",
   "description": "更新守卫：检查已装插件与新版本是否兼容，只锁定会失效的那几个；配置被重置时可还原",
