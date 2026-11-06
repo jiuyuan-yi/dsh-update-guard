@@ -11,7 +11,7 @@
  *   2. 解包失败时不留半成品（否则下次会被当成可复用的缓存）
  *   3. 缓存的来源标记与安装包身份绑定（换包必须重新解包）
  */
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, statSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,51 @@ let failures = 0
 function check (label, cond, detail = '') {
   console.log(`${cond ? '  PASS' : '  FAIL'}  ${label}${detail ? '  ' + detail : ''}`)
   if (!cond) failures++
+}
+
+// This failure-path regression does not need a real DSH install or 7-Zip.
+// A tiny fake 7z extracts a deliberately invalid app.asar. The previous code
+// wrote .source as soon as the file existed, so a failed parse could leave a
+// reusable-looking cache (especially when cleanup was blocked). The new rule
+// is: no stamp until readSurface has parsed the shell bundle successfully.
+if (process.platform !== 'win32') {
+  console.log('\n[0] 解析失败不得留下来源标记（伪 7-Zip）')
+  const fakeRoot = join(tmpdir(), `stamp-fail-${process.pid}`)
+  const work = join(fakeRoot, 'extract-work')
+  const fakeInstaller = join(fakeRoot, 'fake-installer.exe')
+  const fake7z = join(fakeRoot, 'fake-7z.mjs')
+  rmSync(fakeRoot, { recursive: true, force: true })
+  mkdirSync(work, { recursive: true })
+  writeFileSync(fakeInstaller, 'fake installer payload')
+  writeFileSync(join(work, '.source'), 'stale-previous-source', 'utf8')
+  writeFileSync(fake7z, `#!/usr/bin/env node
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+const a = process.argv.slice(2)
+if (a[0] === 'l') {
+  const archive = a.at(-1) || ''
+  console.log(archive.toLowerCase().endsWith('.exe') ? '2026-01-01 00:00:00 ..... 100 app-64.7z' : '2026-01-01 00:00:00 ..... 100 resources/app.asar')
+} else if (a[0] === 'e') {
+  const destArg = a.find(x => x.startsWith('-o'))
+  const dest = destArg ? destArg.slice(2) : process.cwd()
+  mkdirSync(dest, { recursive: true })
+  const archive = a[1] || ''
+  if (/app-64\.7z$/i.test(archive)) writeFileSync(join(dest, 'app.asar'), 'not-a-valid-asar')
+  else writeFileSync(join(dest, 'app-64.7z'), 'fake-inner-payload')
+} else process.exit(2)
+`, 'utf8')
+  chmodSync(fake7z, 0o755)
+  try {
+    let parseFailed = false
+    try {
+      readShellBundleFromInstaller(fakeInstaller, { cacheRoot: fakeRoot, sevenZip: fake7z, keepTemp: true })
+    } catch { parseFailed = true }
+    check('无效 app.asar 确实触发解析失败', parseFailed)
+    check('失败后不保留 app.asar 来源标记', !existsSync(join(work, '.source')))
+    check('失败现场的 app.asar 保留用于诊断', existsSync(join(work, 'app.asar')))
+  } finally { rmSync(fakeRoot, { recursive: true, force: true }) }
+} else {
+  console.log('\n[0] 解析失败不得留下来源标记：SKIP（当前测试桩使用 POSIX 脚本）')
 }
 
 const root = findInstallRoot()

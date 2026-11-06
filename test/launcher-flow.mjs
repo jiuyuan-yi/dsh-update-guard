@@ -74,6 +74,10 @@ function run (h, { exitCode = 0, answer = 'no', extra = [] } = {}) {
         DSH_LAUNCHER_ANSWER: answer,
         DSH_LAUNCHER_QUIET: '1',
         DSH_LAUNCHER_TEST_HIDE_WINDOW: '1',
+        // 假 exe 没有 resources/ 目录，完整性判定必然为假，会走 fail-closed。
+        // 这些测试关心的是"启动/失败/重试/配置"的流程，不是 runtime 自愈，
+        // 所以走显式逃生门，而不是把 fail-closed 关掉。
+        DSH_LAUNCHER_FORCE_START: '1',
       },
     })
     return { code: 0, out }

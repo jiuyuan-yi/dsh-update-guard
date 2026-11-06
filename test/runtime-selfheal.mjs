@@ -84,6 +84,9 @@ console.log('\n[3] 生成的 ps1 里路径没有被 JS 转义毁掉')
       ['解包 filter', 'resources' + bs + 'runtime' + bs + '*'],
       ['注册表键', 'HKLM:' + bs + 'SOFTWARE' + bs + '7-Zip'],
       ['7-Zip 退出码检查', '$LASTEXITCODE'],
+      ['插件目录安全解析', 'function Resolve-PluginDir'],
+      ['插件补丁路径安全解析', 'function Resolve-PluginPatch'],
+      ['补丁路径拒绝上级目录', /\\\.\\\./.test(text)],
     ]
     for (const [label, needle] of want) {
       check(label, text.includes(needle), needle)
@@ -111,7 +114,9 @@ console.log('\n[4] 自愈发生在启动之前')
     check('主启动点存在', startAt > 0)
     check('先检查再启动', callAt > 0 && startAt > 0 && callAt < startAt,
       `check=${callAt} start=${startAt}`)
-    check('失败只告警不阻塞', /Repair-Runtime/.test(text) && /可能无法启动/.test(text))
+    const stopAt = text.indexOf('runtime 仍不完整：停止启动')
+    check('恢复失败时阻止启动', stopAt > 0 && /exit 1/.test(text.slice(stopAt, startAt)) && /Start-Process @spArgs/.test(text))
+    check('失败提示当前版本安装程序修复', /当前 DSH 版本一致的安装程序/.test(text))
   }
 }
 

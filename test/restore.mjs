@@ -48,6 +48,11 @@ console.log('\n[1] 结构校验')
     check('缺 dsh.bundle 被抓', !r.ok && /dsh\.bundle/.test(r.reason), r.reason)
     check('装了但没装 = 未安装', !validateBundle(dir, 'ghost').ok)
     check('官方包永远通过', validateBundle(dir, '@deepseek-ai/dsh-base').ok)
+    check('路径穿越包名被拒绝', !validateBundle(dir, '../../outside').ok)
+    const manifestPath = join(dir, 'node_modules', 'ok-one', 'package.json')
+    writeFileSync(manifestPath, JSON.stringify({ name: 'ok-one', dsh: { bundle: { patch: '../outside.yml' } } }))
+    const unsafePatch = validateBundle(dir, 'ok-one')
+    check('越出插件目录的 patch 路径被拒绝', !unsafePatch.ok && /越出插件目录/.test(unsafePatch.reason), unsafePatch.reason)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 

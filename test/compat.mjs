@@ -64,8 +64,9 @@ console.log('\n[4] 扫描 profile')
     mk('too-new', { name: 'too-new', engines: { dsh: '>=0.3.0' } })
     mk('silent', { name: 'silent' })
     mk('weird', { name: 'weird', peerDependencies: { '@deepseek-ai/dsh': 'whatever' } })
+    writeFileSync(join(dir, 'outside.json'), JSON.stringify({ name: 'outside', peerDependencies: { '@deepseek-ai/dsh': '<0.1.0' } }))
     writeFileSync(join(dir, 'package.json'), JSON.stringify({
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'fits', 'too-new', 'silent', 'weird'] } },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'fits', 'too-new', 'silent', 'weird', '../outside', 7] } },
     }))
 
     const r = checkDeclaredRanges(dir, '0.2.1-rc.5')
@@ -74,6 +75,8 @@ console.log('\n[4] 扫描 profile')
     check('版本不匹配被抓', r.findings.some(f => f.plugin === 'too-new' && f.kind === 'range-mismatch'))
     check('匹配的不报', !r.findings.some(f => f.plugin === 'fits'))
     check('看不懂的范围单列', r.findings.some(f => f.plugin === 'weird' && f.kind === 'unknown-range'))
+    check('路径穿越 bundle 被拒绝', r.findings.some(f => f.plugin === '../outside' && f.kind === 'invalid-package-name'))
+    check('非字符串 bundle 被拒绝', r.findings.some(f => f.plugin === '7' && f.kind === 'invalid-package-name'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

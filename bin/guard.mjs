@@ -360,8 +360,9 @@ function printReport (r) {
           names.push('宿主服务 ' + (Array.isArray(b.missing) ? b.missing.join('/') : b.missing))
         }
       }
-      for (const sname of f.softUnknown ?? []) names.push(sname)
-      console.log('  · ' + f.plugin + '  ——  ' + names.join('，'))
+      for (const sname of f.softUnknown ?? []) names.push('宿主服务待确认 ' + sname)
+      for (const item of f.unverified ?? []) names.push('接口面未能解析 ' + item.moduleName)
+      console.log('  · ' + f.plugin + '  ——  ' + (names.join('，') || '存在未验证项'))
     }
     console.log('')
   }

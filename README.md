@@ -24,6 +24,7 @@
 |---|---|---|
 | 客户端成员（`UiPrimitives.xxx`） | 渲染时抛错，界面崩 | ✅ 会锁 |
 | 宿主服务（`inject: [...]` 里的服务名） | 插件激活不了；若是 required 插件，整个应用起不来 | ❌ **只提示** |
+| 接口面解析不确定（模块表/导出对象无法可靠识别） | 证据不足，不能判断成员是否存在 | ❌ **标记未验证，不自动锁定** |
 
 宿主服务不自动锁，因为服务可能以扫描器没建模的方式动态提供，误报会锁掉正常插件。报出来，你自己判断。
 
@@ -84,7 +85,7 @@ node bin/guard.mjs lock           # 锁定命中的插件
 node bin/guard.mjs unlock         # 撤销全部锁定
 node bin/guard.mjs restore        # 预演：配置被重置后会还原成什么样
 node bin/guard.mjs restore --apply
-node bin/guard.mjs config --set autoLock --value true
+node bin/guard.mjs config --set autoLock --value false # 建议默认关闭；确认报告可靠后再手动开启
 node bin/guard.mjs status
 
 # 启动器（自愈腿）
@@ -117,13 +118,13 @@ node bin/guard.mjs launcher uninstall        # 上面这一步 + 配置改回 in
 | 有界面组件 | 共享 UI 模块的成员 | 客户端 |
 | 纯宿主 | inject: [...] 里的服务名 | 宿主 |
 
-宿主服务名从安装包的 pp.asar 里提取，识别三种注册形式
+宿主服务名从安装包的 app.asar 里提取，识别三种注册形式
 （ super(ctx,"name")、.provide("name")、.set("name",…) 以及
 
-egisterService/defineService/static service），并额外收集运行时里出现过的
+registerService/defineService/static service），并额外收集运行时里出现过的
 字符串常量作宽松兜底——**宁可漏报，不可误报**。
 
-scripts/、	est/、docs/ 和 client.js（浏览器半侧）不计入宿主面。
+scripts/、test/、docs/ 和 client.js（浏览器半侧）不计入宿主面。
 
 ## 检查状态（不把"没查"说成"通过"）
 
@@ -208,6 +209,9 @@ node test/e2e.mjs             # 真解包端到端
 [docs/real-env-checklist.md](docs/real-env-checklist.md) 逐条走。
 
 ## 已知限制
+
+- 接口面解析失败或无法确认导出对象时会标记为未验证，不把空结果当成缺失成员，也不会据此自动锁定；报告会列出 `surfaceUnverifiedModules`。
+- 安装包缓存指纹使用路径、文件系统身份、大小、修改时间、状态变更时间和创建时间等元数据，不读取整个安装包做内容哈希；它能降低同路径替换造成的误复用，但不是密码学意义上的内容校验。
 
 - 只在 Windows 上验证过（启动包装器依赖 `wscript.exe`）
 - 「接口面比对」只看 4 个共享 UI 模块，宿主侧 API 改动不在覆盖范围
