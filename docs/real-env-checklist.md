@@ -85,6 +85,20 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\<插件>\packag
 - [ ] `设置 → 通用` 里三行开关还在
 - [ ] 最近一次检查的结论显示正常
 
+### 4.1 runtime 有没有被更新器清空
+
+桌面端升级会清空 `<安装目录>\resources\runtime`。`dsh-skill-office` 启动时读
+`runtime\office-skills\office\SKILL.md`，读不到就 ENOENT，整个 host 起不来
+（2026-11-05 连崩四次）。启动器现在会在 `Start-Process` 之前补回它。
+
+```powershell
+Test-Path "D:\deep\resources\runtime\office-skills\office\SKILL.md"
+```
+
+- [ ] 返回 `True`
+- [ ] 如果返回 `False`，看 `rescue\launch.log` 里有没有 `runtime 自愈` 的记录
+- [ ] 如果自愈失败，确认 `pending` 目录里还留着安装包——装完手动删掉就补不回来了
+
 ---
 
 ## 5. 启动失败与恢复
