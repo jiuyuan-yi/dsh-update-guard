@@ -96,9 +96,66 @@ node bin/guard.mjs restore          # 预演：配置被重置后会还原成什
 node bin/guard.mjs restore --apply
 node bin/guard.mjs config --set autoLock --value false
 node bin/guard.mjs status
+node bin/guard.mjs touchpoints      # 不看新版本，只看已装插件耦合了宿主多少内部面
+node bin/guard.mjs touchpoints --json
+node bin/guard.mjs touchpoints --only dsh-core-sauce
+node bin/guard.mjs tools --asar <app.asar>                 # 当前工具表面
+node bin/guard.mjs tools --asar <旧> --diff <新>            # 工具/参数变化
+node bin/guard.mjs ghost --asar <app.asar>                 # 运行中的进程是否比磁盘旧
 ```
 
 退出码：`0` 正常，`2` 发现不兼容，`1` 出错。
+
+### touchpoints：最便宜的一层
+
+`check` 要等一个新版本下来才能跑。`touchpoints` 不需要——它只读已装插件的源码，判断它们各自伸手进宿主的哪些不稳定面，秒级出结果。
+
+七类，越靠前越危险：
+
+| # | 类 | 命中意味着 |
+|---|---|---|
+| 1 | `source-patch` | 改写宿主安装目录里的文件。升级后补丁目标移动，要么空转要么把树弄坏 |
+| 2 | `internal-events` | 订阅内部事件名。改名是静默的，handler 直接不再触发 |
+| 3 | `internal-services` | 访问私有服务与 RPC 形状。成员被删时是调用期抛错，不是加载期 |
+| 4 | `host-filesystem` | 直接读写 `DSH_HOME`、`profiles/`。目录搬家后读成空结果，不报错 |
+| 5 | `internal-ui` | 注册进 client slot、命令表、模块加载器。键在 build 之间会移动 |
+| 6 | `custom-channel` | 自己起 server/WebSocket、往 DOM 里插规则。假设了宿主不承诺的页面结构 |
+| 7 | `subprocess-output` | 解析 CLI 的 stdout/stderr。措辞自由度很大，parser 会返回错值而不是失败 |
+
+分级只看两件事：**是否真的写宿主**，以及**伸进多少个不稳定面**。同一类命中一次只算「提到」，两次以上才算「触及」——注释和文档里出现 API 名字不该抬高评级。
+
+`--only <name>` 只看一个插件，`--max-files` 限制单插件扫描文件数（默认 4000）。
+
+**它是启发式扫描，不是兼容性证明。** 零命中只代表这些模式没匹配到，不代表升级安全。
+
+### tools：模型看见的那一面
+
+工具名、参数集、哪个参数是可选，这些是**别人真的会调用**的东西。改一个工具名，或者把原本可选的参数改成必填，不会动实现一行代码就把调用方全弄死。
+
+```bash
+node bin/guard.mjs tools --asar <app.asar>                 # 列出当前工具表面
+node bin/guard.mjs tools --asar <旧.asar> --diff <新.asar>  # 对比两个版本
+```
+
+对比只看三件会真的弄坏调用方的事：
+
+- **工具被移除** —— 引用它的提示词和插件直接失效
+- **参数被移除** —— 按旧参数调用会失败
+- **参数从可选变必填** —— 省略它的调用会失败
+
+仅描述变化单独列出：不影响调用，但可能改变模型行为。
+
+### ghost：你比的是不是同一个东西
+
+就地升级会替换 `app.asar`，而运行中的宿主还在跑它已经加载的旧代码。这之后磁盘上的版本号、目录名、`package.json` 全报新版本，**真正会挂载插件的那个进程还是旧的**。此刻做的任何兼容性判断，都是在拿新版本的接口去比一个跑旧代码的进程——结论通常是反的。
+
+```bash
+node bin/guard.mjs ghost --asar <app.asar>
+```
+
+判据是时间戳而不是版本号：**归档写入时间晚于进程启动时间**，说明那个进程加载的比归档旧。
+
+Windows 专用（需要进程启动时间）。其他平台返回 `unknown` 而不是猜——一个错误的「没有幽灵」比诚实的「判断不了」更糟，因为这正是你会在错误基座上做决定的那一次。
 
 ## 配置
 

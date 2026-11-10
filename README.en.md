@@ -96,9 +96,66 @@ node bin/guard.mjs restore          # dry run of what a restore would do
 node bin/guard.mjs restore --apply
 node bin/guard.mjs config --set autoLock --value false
 node bin/guard.mjs status
+node bin/guard.mjs touchpoints      # what each installed plugin reaches into, no target version needed
+node bin/guard.mjs touchpoints --json
+node bin/guard.mjs touchpoints --only dsh-core-sauce
+node bin/guard.mjs tools --asar <app.asar>                 # current tool surface
+node bin/guard.mjs tools --asar <old> --diff <new>         # tool/parameter changes
+node bin/guard.mjs ghost --asar <app.asar>                 # is the running process older than disk
 ```
 
 Exit codes: `0` ok, `2` incompatible plugins found, `1` error.
+
+### touchpoints: the cheapest tier
+
+`check` needs a downloaded update before it can run. `touchpoints` does not — it reads only the plugins already on disk and reports which unstable host surfaces each one reaches into. Seconds, not minutes.
+
+Seven classes, ordered by how badly the breakage tends to end:
+
+| # | class | a hit means |
+|---|---|---|
+| 1 | `source-patch` | rewrites files inside the installed host. After an upgrade the patch target moves: it either no-ops or corrupts the tree |
+| 2 | `internal-events` | subscribes to internal event names. Renames are silent — the handler simply stops firing |
+| 3 | `internal-services` | reaches private service names and RPC shapes. A removed member throws at call time, not load time |
+| 4 | `host-filesystem` | reads or writes `DSH_HOME`, `profiles/`. A moved directory reads as an empty result, not an error |
+| 5 | `internal-ui` | registers into client slots, command registries, the module loader. Keys move between builds |
+| 6 | `custom-channel` | starts its own server/WebSocket, injects CSS rules. Assumes a page structure the host never promised |
+| 7 | `subprocess-output` | parses CLI stdout/stderr. Wording is free to change; the parser returns wrong values rather than failing |
+
+Risk is two facts only: **does it write into the host**, and **how many unstable surfaces does it reach**. One hit in a class counts as "named", two or more as "reached" — an API name quoted in a comment must not raise the rating.
+
+`--only <name>` scans a single plugin; `--max-files` caps files per plugin (default 4000).
+
+**It is a heuristic scan, not proof of compatibility.** Zero hits means these patterns did not match, not that an upgrade is safe.
+
+### tools: the surface the model sees
+
+Tool names, parameter sets, and which parameters are optional are what callers actually depend on. Renaming a tool, or making an optional parameter required, kills every caller without touching a line of the tool's implementation.
+
+```bash
+node bin/guard.mjs tools --asar <app.asar>                 # list the current tool surface
+node bin/guard.mjs tools --asar <old.asar> --diff <new.asar>
+```
+
+The comparison reports only the three things that genuinely break a caller:
+
+- **a tool removed** — prompts and plugins that name it stop working
+- **a parameter removed** — calls passing it fail
+- **a parameter that stopped being optional** — calls omitting it fail
+
+Description-only changes are listed separately: they do not break calls, but they can change model behaviour.
+
+### ghost: are you comparing the same thing
+
+An in-place upgrade replaces `app.asar` while the running host keeps executing what it already loaded. Afterwards the version on disk, the directory name, and every `package.json` report the NEW version — while the process that would actually mount a plugin is still the OLD code. Compatibility conclusions drawn in that window are attributed to the wrong side, usually inverted.
+
+```bash
+node bin/guard.mjs ghost --asar <app.asar>
+```
+
+The signal is timestamps, not versions: if the archive was written after the process started, that process loaded something older.
+
+Windows only (it needs the process start time). Elsewhere it returns `unknown` rather than guessing — a wrong "no ghost" is worse than an honest "cannot tell", because that is exactly the case where a stale reading gets trusted.
 
 ## Config
 

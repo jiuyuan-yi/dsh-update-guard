@@ -11,6 +11,7 @@
  */
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 
 import {
   analyse, lockFromAnalysis, unlockAll, readConfig, writeConfig, defaultProfileDir, saveReport,
@@ -19,6 +20,11 @@ import { planRestore, applyRestore } from '../lib/restore.mjs'
 import { diagnoseRestore } from '../lib/diagnose.mjs'
 import { basename } from 'node:path'
 import { launcherState, removeLauncher, ensureLauncher } from '../lib/launcher.mjs'
+import { listInstalled } from '../lib/plugins.mjs'
+import { scanAll } from '../lib/touchpoints.mjs'
+import { readToolSurface, diffToolSurface } from '../lib/tool-surface.mjs'
+import { openAsar } from '../lib/asar.mjs'
+import { detectGhost } from '../lib/ghost.mjs'
 
 const PKG_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const CACHE_ROOT = join(PKG_DIR, '.cache')
@@ -246,6 +252,146 @@ if (cmd === 'check') {
     console.log(`已锁定      : ${body.guarded.length ? body.guarded.join(', ') : '无'}`)
     console.log(`自动锁定    : ${config.autoLock ? '开' : '关'}`)
     console.log(`启动自检    : ${config.preflightOnStartup ? '开' : '关'}\n`)
+  }
+} else if (cmd === 'touchpoints') {
+  // Tier-0: how much of the host's internals each installed plugin reaches into.
+  // Needs no target version and downloads nothing — useful before you even know
+  // whether an update is coming.
+  const roots = [
+    join(profileDir, 'node_modules'),
+    join(profileDir, 'node_modules', '@deepseek-ai')
+  ]
+  const installed = listInstalled(roots)
+  // Only bundles the profile actually mounts. node_modules also holds plain
+  // library dependencies (@anthropic-ai/sdk and friends); ranking those tells
+  // the operator nothing they can act on.
+  let mounted = installed
+  try {
+    const pkg = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))
+    const bundles = pkg?.dsh?.profile?.bundles
+    if (Array.isArray(bundles) && bundles.length > 0) {
+      const want = new Set(bundles)
+      mounted = installed.filter(p => want.has(p.name))
+    }
+  } catch { /* no readable package.json — scan everything and say so */ }
+  const scopeNote = mounted === installed ? '全部已解析包' : 'bundles 列表内的插件'
+  const withVersion = mounted.map(p => {
+    let version = '?'
+    try {
+      version = JSON.parse(readFileSync(join(p.dir, 'package.json'), 'utf8')).version ?? '?'
+    } catch { /* unreadable manifest — keep the placeholder */ }
+    return { ...p, version }
+  })
+  const rows = scanAll(withVersion, { maxFiles: Number(opt('max-files', '4000')) || 4000 })
+  const only = opt('only', undefined)
+  const shown = only === undefined ? rows : rows.filter(r => r.name === only)
+  const tally = { high: 0, medium: 0, low: 0, none: 0 }
+  for (const r of rows) tally[r.risk.band] += 1
+
+  const body = { ok: true, profile: profileDir, tally, plugins: shown }
+  if (asJson) out(body)
+  else {
+    console.log('\n=== 触点扫描 ===\n')
+    console.log(`profile : ${profileDir}`)
+    console.log(`已扫描  : ${rows.length} 个插件（${scopeNote}）`)
+    console.log(`分布    : high ${tally.high} / medium ${tally.medium} / low ${tally.low} / none ${tally.none}\n`)
+    for (const r of shown) {
+      const mark = r.risk.band === 'high' ? '!!' : r.risk.band === 'medium' ? '! ' : '  '
+      console.log(`${mark} ${r.name} ${r.version}  [${r.risk.band}] ${r.risk.reason}`)
+      for (const c of r.classes) {
+        console.log(`       - ${c.slug} ×${c.hits}  (${c.files.slice(0, 3).join(', ')})`)
+      }
+    }
+    console.log('\n说明：这是启发式扫描，不是兼容性证明。')
+    console.log('零命中只代表「这些模式没匹配到」，不代表升级一定安全。\n')
+  }
+} else if (cmd === 'tools') {
+  // Tier-2b: the model-visible tool surface. Names, parameter sets and
+  // optionality are what a saved prompt or another plugin actually calls.
+  const asarPath = opt('asar', undefined)
+  if (!asarPath) {
+    if (asJson) out({ ok: false, error: 'tools needs --asar <path to app.asar>' })
+    else console.error('\n[!] 需要 --asar <app.asar 路径>\n')
+    process.exit(1)
+  }
+  const surface = readToolSurface(asarPath)
+  const against = opt('diff', undefined)
+
+  if (against) {
+    const next = readToolSurface(against)
+    const d = diffToolSurface(surface, next)
+    const body = { ok: true, from: asarPath, to: against, count: { before: surface.length, after: next.length }, ...d }
+    if (asJson) out(body)
+    else {
+      console.log('\n=== 工具表面差异 ===\n')
+      console.log(`旧: ${asarPath}  (${surface.length} 个工具)`)
+      console.log(`新: ${against}  (${next.length} 个工具)\n`)
+      if (!d.breaking) console.log('没有破坏性变化。\n')
+      if (d.removed.length) {
+        console.log(`移除的工具 (${d.removed.length}) —— 引用它的提示词会直接失效:`)
+        for (const n of d.removed) console.log(`  - ${n}`)
+        console.log('')
+      }
+      if (d.added.length) {
+        console.log(`新增的工具 (${d.added.length}):`)
+        for (const n of d.added) console.log(`  + ${n}`)
+        console.log('')
+      }
+      const paramBreaks = d.changed.filter(c => c.lostParams.length || c.newlyRequired.length)
+      if (paramBreaks.length) {
+        console.log(`参数变化 (${paramBreaks.length}) —— 按旧参数调用会失败:`)
+        for (const c of paramBreaks) {
+          console.log(`  ! ${c.name}`)
+          if (c.lostParams.length) console.log(`      丢失参数: ${c.lostParams.join(', ')}`)
+          if (c.newlyRequired.length) console.log(`      变为必填: ${c.newlyRequired.join(', ')}`)
+        }
+        console.log('')
+      }
+      const descOnly = d.changed.filter(c => !c.lostParams.length && !c.newlyRequired.length)
+      if (descOnly.length) {
+        console.log(`仅描述变化 (${descOnly.length})，不影响调用但可能改变模型行为:`)
+        for (const c of descOnly) console.log(`  ~ ${c.name}`)
+        console.log('')
+      }
+    }
+  } else {
+    const body = { ok: true, asar: asarPath, count: surface.length, tools: surface }
+    if (asJson) out(body)
+    else {
+      console.log('\n=== 工具表面 ===\n')
+      console.log(`${asarPath}`)
+      console.log(`共 ${surface.length} 个工具定义\n`)
+      for (const t of surface) {
+        const p = t.params.names.length ? t.params.names.join(', ') : '(无参数)'
+        console.log(`${t.name.padEnd(24)} ${t.module.replace(/^dsh-tool-/, '').padEnd(16)} ${p.slice(0, 70)}`)
+      }
+      console.log('')
+    }
+  }
+} else if (cmd === 'ghost') {
+  // Is the running host executing an older build than the one on disk? Every
+  // compatibility conclusion is attributed to the wrong side of the upgrade
+  // while this is true.
+  const asarPath = opt('asar', join(installRoot ?? '', 'resources', 'app.asar'))
+  const r = detectGhost(asarPath)
+  const body = { ok: true, asar: asarPath, ...r }
+  if (asJson) out(body)
+  else {
+    console.log('\n=== 幽灵宿主 ===\n')
+    console.log(`归档 : ${asarPath}`)
+    console.log(`写入 : ${r.asarMtime ?? '(不可读)'}`)
+    console.log(`状态 : ${r.status}`)
+    console.log(`说明 : ${r.reason}\n`)
+    if (r.status === 'ghost') {
+      console.log('磁盘上的版本比运行中的进程新。此刻做的任何兼容性判断，')
+      console.log('都是在拿新版本的接口去比一个还在跑旧代码的进程。')
+      console.log('重启 DSH 后再判断。\n')
+    }
+    if (r.processes.length) {
+      console.log('进程:')
+      for (const p of r.processes) console.log(`  ${String(p.id ?? '-').padEnd(8)} ${p.name ?? '-'}  启动于 ${p.start ?? '-'}`)
+      console.log('')
+    }
   }
 } else {
   console.log([
