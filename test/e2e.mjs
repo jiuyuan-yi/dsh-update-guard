@@ -66,6 +66,8 @@ function run (args) {
 }
 
 let failures = 0
+let skipped = false
+const skippedCount = () => (skipped ? 1 : 0)
 function check (label, cond, detail = '') {
   console.log(`${cond ? '  PASS' : '  FAIL'}  ${label}${detail ? '  ' + detail : ''}`)
   if (!cond) failures++
@@ -131,7 +133,18 @@ try {
   let parsed
   try { parsed = JSON.parse(r1.out.slice(r1.out.indexOf('{'))) } catch { parsed = undefined }
   check('check 返回 JSON', parsed !== undefined, r1.out.slice(0, 120))
-  if (parsed) {
+
+  // Tier-2 needs a downloaded installer whose interface table can be extracted.
+  // This machine may have none — no pending update, or a cached installer that
+  // is already the installed version. Skipping is honest; reading `findings`
+  // off a no-pending report is not.
+  const tier2Runnable = parsed !== undefined && parsed.stage !== 'no-pending'
+  if (parsed && !tier2Runnable) {
+    console.log('  SKIP  没有待安装的更新包，接口比对与锁定链路未跑到')
+    console.log(`        ${parsed.note ?? '缓存里没有可比的安装包'}`)
+    console.log('        指定一个有待装包的 DSH_DESKTOP_ROOT 可覆盖')
+    skipped = true
+  } else if (parsed) {
     const names = parsed.findings.map(f => f.plugin)
     check('检出 dsh-fixture-bad', names.includes('dsh-fixture-bad'))
     check('检出 dsh-fixture-multi', names.includes('dsh-fixture-multi'))
@@ -146,6 +159,16 @@ try {
       !multi?.broken.some(b => b.missing.includes('JsonBlock')))
   }
   check('check 不改动 patch', sha(patchBefore) === hashBefore)
+
+  if (!tier2Runnable) {
+    // lock and unlock both hang off the findings above; running them against an
+    // empty finding set would "pass" while testing nothing.
+    console.log('\n[C] lock — 跳过（无待装包）')
+    console.log('\n[D] unlock — 跳过（无待装包）')
+    console.log('')
+    console.log(`ALL PASS (${skippedCount()} 段未覆盖)`)
+    process.exit(3)
+  }
 
   // ---------------------------------------------------------------- C: lock
   console.log('\n[C] lock')

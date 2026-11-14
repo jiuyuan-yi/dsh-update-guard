@@ -10,6 +10,7 @@
  *   config   show or set the guard config read by the host plugin
  */
 import { join, dirname } from 'node:path'
+import { runCookieHelper, parseList, parsePrune } from '../lib/cookies.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
@@ -25,6 +26,9 @@ import { scanAll } from '../lib/touchpoints.mjs'
 import { readToolSurface, diffToolSurface } from '../lib/tool-surface.mjs'
 import { openAsar } from '../lib/asar.mjs'
 import { detectGhost } from '../lib/ghost.mjs'
+import { readFeedConfig, fetchFeed, versionDistance } from '../lib/feed.mjs'
+import { checkDeclaredRanges } from '../lib/compat.mjs'
+import { findInstallRoot, installedVersion } from '../lib/installer.mjs'
 
 const PKG_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const CACHE_ROOT = join(PKG_DIR, '.cache')
@@ -60,7 +64,67 @@ const ANALYSE_OPTS = {
 }
 
 // ---------------------------------------------------------------- commands
-if (cmd === 'check') {
+if (cmd === 'check' && flag('remote')) {
+  // Ask the feed what the newest published build is, without waiting for a
+  // download. Only Tier 1 can run here — declared ranges need nothing but a
+  // version string — so this answers "should I take this update", not "which
+  // plugins break". The second question still needs the installer.
+  const root = installRoot ?? findInstallRoot()
+  if (!root) fail('找不到安装目录，无法读取 app-update.yml')
+  const config = readFeedConfig(root)
+  if (!config) fail(`没有可读的 app-update.yml：${join(root, 'resources', 'app-update.yml')}`)
+
+  const feed = await fetchFeed(config)
+  if (!feed.ok) fail(`读取更新源失败：${feed.error}`, { feedUrl: feed.feedUrl })
+
+  const installed = installedVersion(root) ?? 'unknown'
+  const distance = versionDistance(installed, feed.version)
+  const upToDate = installed === feed.version
+
+  const tier1 = upToDate ? null : checkDeclaredRanges(profileDir, feed.version)
+  const body = {
+    ok: true,
+    mode: 'remote',
+    feedUrl: feed.feedUrl,
+    channel: config.channel,
+    installed,
+    available: feed.version,
+    distance,
+    upToDate,
+    installer: { url: feed.fileUrl, size: feed.size, releaseDate: feed.releaseDate },
+    tier1: tier1 ?? null
+  }
+  if (asJson) out(body)
+  else {
+    console.log('\n=== 线上版本 ===\n')
+    console.log(`渠道     : ${config.channel}`)
+    console.log(`已装     : ${installed}`)
+    console.log(`线上     : ${feed.version}`)
+    console.log(`跨度     : ${distance.label}（${distance.kind}）`)
+    console.log(`大小     : ${feed.size ? Math.round(feed.size / 1024 / 1024) + ' MB' : '(未知)'}`)
+    if (feed.releaseDate) console.log(`发布     : ${feed.releaseDate}`)
+    console.log('')
+
+    if (upToDate) {
+      console.log('已是最新，没有可比的东西。\n')
+    } else {
+      console.log(`--- 声明范围检查（不需要下载） ---\n`)
+      const declared = tier1.declared ?? 0
+      const undeclared = tier1.undeclared ?? []
+      const findings = tier1.findings ?? []
+      console.log(`声明了支持范围的插件: ${declared} 个`)
+      console.log(`没声明（不受版本约束）: ${undeclared.length} 个`)
+      if (findings.length === 0) {
+        console.log('\n声明范围里没有插件会被这个版本排除。')
+      } else {
+        console.log(`\n以下 ${findings.length} 个插件的声明范围不覆盖 ${feed.version}：`)
+        for (const f of findings) console.log(`  · ${f.plugin}  ${f.range ?? ''}  ${f.reason ?? ''}`)
+      }
+      console.log('\n注意：这只是版本声明层。插件到底会不会坏，要等安装包下载完做接口面比对。')
+      console.log(`下载完成后运行：node "${join(PKG_DIR, 'bin', 'guard.mjs')}" check\n`)
+    }
+  }
+} else if (cmd === 'check') {
   const r = analyse(ANALYSE_OPTS)
   if (r.stage === 'error') fail(explain(r), r)
   // Also publish the result the settings panel reads, so a manual check shows
@@ -230,7 +294,40 @@ if (cmd === 'check') {
     if (asJson) out({ ok: true, config: c, path: p })
     else console.log(`已保存 ${key} = ${JSON.stringify(parsed)}\n${p}\n`)
   }
-} else if (cmd === 'status') {
+} else if (cmd === 'cookie') {
+    // Cookie 罐维护。默认只看；--prune 才动手。
+    // 只能在应用关着的时候操作：库被独占锁住时如实报告，不硬来。
+    const doPrune = flag('prune')
+    const result = runCookieHelper(PKG_DIR, { list: !doPrune })
+    const parsed = doPrune ? parsePrune(result) : parseList(result)
+
+    if (asJson) {
+      out({ ok: parsed.ok, action: doPrune ? 'prune' : 'list', db: result.db, ...parsed })
+    } else {
+      console.log('\n=== Cookie 罐 ===\n')
+      console.log(`数据库  : ${result.db}`)
+      console.log(`python  : ${result.python ?? '(未找到)'}`)
+      if (!parsed.ok) {
+        const why = {
+          'no-db': '数据库不存在（应用从没启动过？）',
+          'no-python': '找不到 python，无法读取',
+          'no-helper': '缺少 lib/prune-cookies.py',
+          'locked-or-empty': '数据库被占用（应用正在运行），或罐是空的',
+          'run-failed': '调用失败: ' + (result.message ?? ''),
+        }[parsed.reason] ?? parsed.reason
+        console.log(`结果    : ${why}\n`)
+      } else if (doPrune) {
+        console.log(`结果    : 保留 ${parsed.kept} 条，清掉 ${parsed.removed} 条\n`)
+      } else {
+        console.log(`dsh-auth: ${parsed.total} 条\n`)
+        for (const n of parsed.names) console.log(`  ${n}`)
+        console.log('')
+        console.log(parsed.total > 2
+          ? '数量偏多。关掉 DSH 后运行 `node bin/guard.mjs cookie --prune` 清理。\n'
+          : '数量正常。\n')
+      }
+    }
+  } else if (cmd === 'status') {
   const r = analyse({ ...ANALYSE_OPTS, force: false })
   const config = readConfig(profileDir)
   const body = {
@@ -402,6 +499,7 @@ if (cmd === 'check') {
     '  lock      只锁定会失效的插件（其余不受影响）',
     '  unlock    撤销本工具做过的锁定',
     '  status    当前状态',
+    '  cookie    看 dsh-auth cookie 条数  --prune 清理（需先关 DSH）',
     '  config    查看/修改配置   --set <key> --value <v>',
     '',
     '选项:',

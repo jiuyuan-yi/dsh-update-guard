@@ -1,10 +1,13 @@
-# Keep only the newest dsh-auth-* cookie, delete the rest.
+# Read or prune the desktop cookie jar.
 #
-# The desktop app picks a random loopback port each launch, and the host names the
+#   node ... --list  <db>   print the dsh-auth-* names, change nothing
+#   node ... (none)  <db>   keep only the newest one, delete the rest
+#
+# The desktop app picks a random loopback port each launch and the host names the
 # auth cookie after host:port. RFC 6265 keys cookies by domain/path/name, so every
-# port adds a new cookie that never evicts the others; around 70 of them the request
-# header passes Node's 16 KB limit and every request dies in header parsing with
-# "Web authentication failed". Pruning before launch keeps the jar at one entry.
+# port adds a cookie that never evicts the others; near 70 of them the request
+# header passes Node's 16 KB limit and every request dies with
+# "Web authentication failed". Pruning before launch keeps the jar bounded.
 #
 # Runs only while the app is closed, so the database is not locked.
 import sqlite3
@@ -15,6 +18,7 @@ if len(sys.argv) < 2:
     sys.exit(0)
 
 db = sys.argv[1]
+list_only = '--list' in sys.argv[2:]
 
 try:
     con = sqlite3.connect(db)
@@ -23,6 +27,12 @@ try:
         "order by creation_utc desc").fetchall()
 except Exception as exc:                      # report, never raise
     print('PRUNE error=' + type(exc).__name__)
+    sys.exit(0)
+
+if list_only:
+    print('LIST total=%d' % len(rows))
+    for host, name in rows:
+        print('  %s | %s' % (name, host))
     sys.exit(0)
 
 if len(rows) <= 1:

@@ -89,6 +89,7 @@ dsh plugin --profile web add github:jiuyuan-yi/dsh-update-guard
 ```bash
 node bin/guard.mjs check            # 检查待安装的更新
 node bin/guard.mjs check --json     # 机器可读
+node bin/guard.mjs check --remote   # 不下载安装包，直接问线上是什么版本
 node bin/guard.mjs lock             # 锁定命中的插件
 node bin/guard.mjs unlock           # 撤销锁定
 node bin/guard.mjs diagnose         # 不还原时，看判定卡在哪一环

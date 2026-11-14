@@ -2,6 +2,8 @@
 /rescue/
 /.cache/
 /.restore-backups/
+# 自愈用的安装包备份：299 MB，只对本机有意义，绝不进仓库
+/installers/
 
 # 备份文件（配置或快捷方式的快照，含本机信息）
 *.bak-*

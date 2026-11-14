@@ -89,6 +89,7 @@ Marketplace page: https://awesome-dsh-plugin.com/p/jiuyuan-yi/dsh-update-guard/
 ```bash
 node bin/guard.mjs check            # check the pending update
 node bin/guard.mjs check --json     # machine readable
+node bin/guard.mjs check --remote   # ask the feed for the published version, no download
 node bin/guard.mjs lock             # lock the plugins that will break
 node bin/guard.mjs unlock           # undo
 node bin/guard.mjs diagnose         # when it declines to act, see which stage it stalled at
