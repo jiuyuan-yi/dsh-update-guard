@@ -19,3 +19,6 @@ node_modules/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# npm 凭据：只对本机有效
+.npmrc
