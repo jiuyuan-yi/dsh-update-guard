@@ -77,12 +77,19 @@ runtime 恢复        10.2 秒，6144 个文件，SKILL.md 回来
 需要 Node.js 18+、Windows、DSH 桌面端。
 
 ```bash
+dsh plugin --profile web add dsh-update-guard
+```
+
+从 npm 装，不经过 git clone，也没有 `allowBuilds` 批准那一步。装完重启。
+
+要跟源码（比如想改代码）再用：
+
+```bash
 dsh plugin --profile web add github:jiuyuan-yi/dsh-update-guard
 ```
 
-首次运行会要求 `allowBuilds` 批准，按提示加上再跑一次。装完重启。
-
 市场页：https://awesome-dsh-plugin.com/p/jiuyuan-yi/dsh-update-guard/
+npm 页：https://www.npmjs.com/package/dsh-update-guard
 
 ## 命令行
 

@@ -77,12 +77,19 @@ real crash          4 crashes on 2026-11-05; boots normally after this plugin re
 Node.js 18+, Windows, DSH desktop.
 
 ```bash
+dsh plugin --profile web add dsh-update-guard
+```
+
+From npm — no git clone, and no `allowBuilds` approval step. Restart after.
+
+To track source instead (e.g. you want to change the code):
+
+```bash
 dsh plugin --profile web add github:jiuyuan-yi/dsh-update-guard
 ```
 
-The first run asks you to approve `allowBuilds` — follow the hint and retry. Then restart.
-
 Marketplace page: https://awesome-dsh-plugin.com/p/jiuyuan-yi/dsh-update-guard/
+npm: https://www.npmjs.com/package/dsh-update-guard
 
 ## CLI
 
