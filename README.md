@@ -6,6 +6,30 @@
 
 ---
 
+## 先看它是干什么的
+
+```bash
+dsh plugin --profile web add dsh-update-guard
+```
+
+装上之后 `dsh-update-guard status` 的输出：
+
+```text
+=== 状态 ===
+
+profile     : C:\Users\ASUS\.dsh\profiles\desktop
+安装目录    : D:\deep
+待安装更新  : 无
+已装插件    : 13
+已锁定      : 无
+自动锁定    : 关
+启动自检    : 关
+```
+
+它只在你决定装更新、或者 DSH 起不来的时候出现，平时不占屏、不弹窗。
+
+---
+
 ## 起因：一次更新，连崩四次
 
 2026-11-05，升级到 `0.2.2-rc.1` 之后，DSH 起不来了。没有界面，没有提示，只有日志里这一句：

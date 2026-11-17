@@ -6,6 +6,30 @@ English · [中文](README.md)
 
 ---
 
+## See what it does
+
+```bash
+dsh plugin --profile web add dsh-update-guard
+```
+
+Then `dsh-update-guard status` prints (the CLI follows the DSH locale; the Chinese default is shown):
+
+```text
+=== 状态 ===
+
+profile     : C:\Users\ASUS\.dsh\profiles\desktop
+安装目录    : D:\deep
+待安装更新  : 无
+已装插件    : 13
+已锁定      : 无
+自动锁定    : 关
+启动自检    : 关
+```
+
+It shows up only when you are about to install an update, or when DSH will not start. No tray icon, no popups.
+
+---
+
 ## Why this exists: one update, four crashes in a row
 
 On 2026-11-05 I upgraded to `0.2.2-rc.1` and DSH stopped starting. No window, no message — just this in the log:
