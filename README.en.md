@@ -55,7 +55,7 @@ This plugin exists so that does not happen again.
 |  | Without | With |
 |---|---|---|
 | Before updating | No idea which plugins will break | Lists the plugins and the exact members |
-| After it breaks | Reinstall DSH | Launcher restores runtime from the installer, ~10s |
+| After it breaks | Reinstall DSH | Launcher restores runtime from the installer — **measured 8s / 6136 files** (0.2.2-rc.5) |
 | Config reset | Plugins gone | Surgical restore, skipping only the broken one |
 | Icon reverted | The healing is gone too | Re-pointed on next launch |
 
