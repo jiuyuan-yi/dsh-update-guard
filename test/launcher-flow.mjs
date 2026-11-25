@@ -45,7 +45,10 @@ function makeHarness () {
   const profile = join(root, 'profile')
   mkdirSync(join(profile, 'node_modules', '@deepseek-ai', 'dsh-base'), { recursive: true })
   mkdirSync(pkg, { recursive: true })
-  const r = ensureLauncher({ profileDir: profile, pkgDir: pkg, manageShortcut: false })
+  // Explicit target: on a machine without the desktop app `findInstallRoot()`
+  // returns undefined, and generation now refuses instead of inventing node.exe.
+  // These suites test the wrapper's behaviour, not target discovery.
+  const r = ensureLauncher({ exePath: process.env.DSH_LAUNCHER_TEST_EXE ?? process.execPath, profileDir: profile, pkgDir: pkg, manageShortcut: false })
   if (!r.ok) throw new Error('generation failed: ' + r.reason)
 
   // A uniquely named copy of powershell, so the "already running" check looks

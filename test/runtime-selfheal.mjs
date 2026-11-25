@@ -38,6 +38,10 @@ async function generate () {
   const dir = mkdtempSync(join(tmpdir(), 'ug-runtime-'))
   try {
     const r = mod.ensureLauncher({
+      // Generation refuses to invent a target when the app is not installed
+      // (that guess used to become node.exe and blocked startup). These are
+      // source-text assertions, so any explicit target is enough.
+      exePath: process.env.DSH_LAUNCHER_TEST_EXE ?? process.execPath,
       pkgDir: dir,
       profileDir: join(dir, 'profile'),
       manageShortcut: false,

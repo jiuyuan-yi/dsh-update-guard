@@ -48,7 +48,9 @@ function makeHarness () {
   mkdirSync(join(profile, 'node_modules', '@deepseek-ai', 'dsh-web-app'), { recursive: true })
   mkdirSync(pkg, { recursive: true })
 
-  const r = ensureLauncher({ profileDir: profile, pkgDir: pkg, manageShortcut: false })
+  // Explicit target: without a discoverable install, generation refuses rather
+  // than defaulting to node.exe. Repair behaviour is what this suite covers.
+  const r = ensureLauncher({ exePath: process.env.DSH_LAUNCHER_TEST_EXE ?? process.execPath, profileDir: profile, pkgDir: pkg, manageShortcut: false })
   if (!r.ok) throw new Error('launcher generation failed: ' + r.reason)
 
   return { root, pkg, profile, ps1Path: join(pkg, 'rescue', 'dsh-launch.ps1') }

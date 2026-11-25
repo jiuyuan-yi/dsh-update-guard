@@ -45,7 +45,9 @@ function harness () {
   mkdirSync(pkg, { recursive: true })
   writeFileSync(join(profile, 'node_modules', '@deepseek-ai', 'dsh-base', 'package.json'),
     JSON.stringify({ name: '@deepseek-ai/dsh-base', version: '1.0.0' }))
-  const r = ensureLauncher({ profileDir: profile, pkgDir: pkg, manageShortcut: false })
+  // Explicit target: generation refuses to guess when no install is discoverable,
+  // and this suite is about the restore decision, not target discovery.
+  const r = ensureLauncher({ exePath: process.env.DSH_LAUNCHER_TEST_EXE ?? process.execPath, profileDir: profile, pkgDir: pkg, manageShortcut: false })
   if (!r.ok) throw new Error('generation failed: ' + r.reason)
   return { root, pkg, profile, ps1Path: join(pkg, 'rescue', 'dsh-launch.ps1') }
 }
