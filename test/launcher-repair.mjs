@@ -62,7 +62,7 @@ function run (h, args = []) {
         encoding: 'utf8',
         timeout: 60000,
         windowsHide: true,
-        env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: NOTEPAD, DSH_LAUNCHER_QUIET: '1' },
+        env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: NOTEPAD, DSH_LAUNCHER_QUIET: '1', DSH_LAUNCHER_TEST_MUTEX: 'repair-' + process.pid },
       }),
     }
   } catch (e) {

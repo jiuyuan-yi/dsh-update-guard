@@ -129,7 +129,7 @@ try {
 
   // ---------------------------------------------------------------- A/B: check
   console.log('\n[A/B] check on isolated profile')
-  const r1 = run(['check', '--profile', profile, '--root', ROOT, '--json'])
+  const r1 = run(['check', '--profile', profile, '--root', ROOT, '--cache', join(work, 'cache'), '--json'])
   let parsed
   try { parsed = JSON.parse(r1.out.slice(r1.out.indexOf('{'))) } catch { parsed = undefined }
   check('check 返回 JSON', parsed !== undefined, r1.out.slice(0, 120))
@@ -172,7 +172,7 @@ try {
 
   // ---------------------------------------------------------------- C: lock
   console.log('\n[C] lock')
-  const r2 = run(['lock', '--profile', profile, '--root', ROOT, '--json'])
+  const r2 = run(['lock', '--profile', profile, '--root', ROOT, '--cache', join(work, 'cache'), '--json'])
   let lockRes
   try { lockRes = JSON.parse(r2.out.slice(r2.out.indexOf('{'))) } catch { lockRes = undefined }
   check('lock 返回 JSON', lockRes !== undefined, r2.out.slice(0, 120))

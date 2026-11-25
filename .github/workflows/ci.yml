@@ -1,0 +1,85 @@
+name: ci
+
+# What this checks: the offline suite — patch engine, scrub rules, tool surface,
+# touchpoints, restore planning, launcher generation, runtime manifest. It needs
+# no DSH install, no network and no dependencies.
+#
+# What it cannot check: anything that requires a real installation (updating
+# across two versions, a desktop shortcut, a live host process). Those suites
+# report SKIP. A green run here means "the logic that can be tested offline is
+# correct", not "verified against every DSH release" — the README says the same,
+# and this workflow must not imply otherwise.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Zero runtime dependencies is a design guarantee, not a preference:
+      # no install step, no supply chain, nothing to audit. Fail the build the
+      # day that changes, instead of discovering it in a release review.
+      - name: Assert no runtime dependencies
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $deps = 0
+          if ($pkg.PSObject.Properties.Name -contains 'dependencies' -and $null -ne $pkg.dependencies) {
+            $deps = @($pkg.dependencies.PSObject.Properties).Count
+          }
+          Write-Host "runtime dependencies: $deps"
+          if ($deps -gt 0) { throw "runtime dependencies are not allowed" }
+
+      # A stand-in host executable lets the launcher/runtime tests run here.
+      # They only need a path whose parent looks like an install directory.
+      - name: Provide a stand-in host executable
+        shell: pwsh
+        run: |
+          $p = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness.exe'
+          New-Item -ItemType File -Path $p -Force | Out-Null
+          "DSH_LAUNCHER_TEST_EXE=$p" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Test suite
+        shell: pwsh
+        run: |
+          node test/all.mjs
+          $code = $LASTEXITCODE
+          Write-Host "test/all.mjs exit code: $code"
+          # 0 = everything ran and passed.
+          # 3 = everything that ran passed, but some suites reported SKIP for lack
+          #     of a real install. That is not green, and it must not fail the
+          #     build either: failing would train people to ignore CI.
+          # 1 = real failure.
+          if ($code -eq 3) {
+            Write-Host "::warning::Some suites were not verified (no real DSH install on this runner)."
+            exit 0
+          }
+          exit $code
+
+      - name: Job summary
+        if: always()
+        shell: pwsh
+        run: |
+          @(
+            '### dsh-update-guard CI'
+            ''
+            "- runner: windows-latest, node $(node -v)"
+            "- suite: ``node test/all.mjs``"
+            ''
+            'Suites reported as UNVERIFIED were skipped for lack of a real DSH install.'
+            'They are not passes. The offline suite proves the logic, not cross-version compatibility.'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

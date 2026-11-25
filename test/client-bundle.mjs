@@ -118,6 +118,47 @@ console.log('\n[4] 坏上下文不抛')
   check('inject 抛错也不冒出', threw === undefined, threw ? String(threw.message) : '')
 }
 
+console.log('\n[5] 风险标签')
+{
+  const stubRequire = (name) => ({
+    createElement: function () { return { type: arguments[0] } },
+    useState: (v) => [v, () => { }],
+    useEffect: () => { },
+    Switch: function Switch () { return null },
+  })
+  const exports = registered[0].factory(stubRequire)
+  const t = exports.__test
+  check('有风险标签函数', typeof t?.riskLabel === 'function')
+  check('high → 高', t.riskLabel('high') === '高')
+  check('medium → 中', t.riskLabel('medium') === '中')
+  check('low → 低', t.riskLabel('low') === '低')
+  check('none → 无', t.riskLabel('none') === '无')
+  check('未知值不抛', t.riskLabel(undefined) === '?', String(t.riskLabel(undefined)))
+}
+
+console.log('\n[6] 升级前确认：只认硬证据')
+{
+  const stubRequire = (name) => ({
+    createElement: function () { return { type: arguments[0] } },
+    useState: (v) => [v, () => { }],
+    useEffect: () => { },
+    Switch: function Switch () { return null },
+  })
+  const t = registered[0].factory(stubRequire).__test
+  const hard = t.hardFindings({
+    stage: 'analysed',
+    findings: [
+      { plugin: 'a', broken: [{ moduleName: 'x', missing: ['y'] }] },
+      { plugin: 'b', broken: [{ moduleName: 'host services', missing: ['s'], note: 'service-absent' }] },
+      { plugin: 'c', broken: [] },
+    ],
+  })
+  check('只挑出硬命中', hard.length === 1 && hard[0].plugin === 'a', hard.map(f => f.plugin).join(','))
+  check('没有分析结果时为空', t.hardFindings({ stage: 'no-pending' }).length === 0)
+  check('null 不抛', t.hardFindings(null).length === 0)
+  check('无 broken 字段不抛', t.hardFindings({ stage: 'analysed', findings: [{ plugin: 'd' }] }).length === 0)
+}
+
 console.log('')
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)

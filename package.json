@@ -1,7 +1,10 @@
 {
   "name": "dsh-update-guard",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "type": "module",
+  "scripts": {
+    "test": "node test/all.mjs"
+  },
   "description": "更新守卫：检查已装插件与新版本是否兼容，只锁定会失效的那几个；配置被重置时可还原。Update guard for DeepSeek Harness plugins — pin only the ones that break on upgrade, restore config that got reset.",
   "main": "./lib/index.js",
   "exports": {
@@ -15,7 +18,7 @@
   "dsh": {
     "id": "dsh-update-guard",
     "name": "更新守卫",
-    "version": "0.4.5",
+    "version": "0.5.0",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -47,7 +50,8 @@
     "CHANGELOG-0.4.0.md",
     "CHANGELOG-0.4.1.md",
     "CHANGELOG-0.4.4-verified.md",
-    "CHANGELOG-0.4.5.md"
+    "CHANGELOG-0.4.5.md",
+    "CHANGELOG-0.5.0.md"
   ],
   "keywords": [
     "dsh",

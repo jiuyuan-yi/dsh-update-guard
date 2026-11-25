@@ -63,7 +63,7 @@ function launch (h) {
   try {
     execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', h.ps1Path, '-NoStart'], {
       encoding: 'utf8', timeout: 60000, windowsHide: true,
-      env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: 'C:/Windows/System32/notepad.exe', DSH_LAUNCHER_QUIET: '1' },
+      env: { ...process.env, DSH_LAUNCHER_PROFILE: h.profile, DSH_LAUNCHER_EXE: 'C:/Windows/System32/notepad.exe', DSH_LAUNCHER_QUIET: '1', DSH_LAUNCHER_TEST_MUTEX: 'agree-' + process.pid },
     })
   } catch { /* 退出码不重要 */ }
 }

@@ -74,6 +74,11 @@ function run (h, { exitCode = 0, answer = 'no', extra = [] } = {}) {
         DSH_LAUNCHER_ANSWER: answer,
         DSH_LAUNCHER_QUIET: '1',
         DSH_LAUNCHER_TEST_HIDE_WINDOW: '1',
+        // A real launcher holds the single-instance mutex for as long as DSH runs,
+        // so without a per-test name every one of these cases would read
+        // "another launcher is running" and exit 0 — an environment collision
+        // wearing a regression's clothes.
+        DSH_LAUNCHER_TEST_MUTEX: 'flow-' + process.pid,
         // 假 exe 没有 resources/ 目录，完整性判定必然为假，会走 fail-closed。
         // 这些测试关心的是"启动/失败/重试/配置"的流程，不是 runtime 自愈，
         // 所以走显式逃生门，而不是把 fail-closed 关掉。

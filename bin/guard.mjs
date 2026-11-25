@@ -12,7 +12,7 @@
 import { join, dirname } from 'node:path'
 import { runCookieHelper, parseList, parsePrune } from '../lib/cookies.mjs'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs'
 
 import {
   analyse, lockFromAnalysis, unlockAll, readConfig, writeConfig, defaultProfileDir, saveReport,
@@ -24,6 +24,9 @@ import { launcherState, removeLauncher, ensureLauncher } from '../lib/launcher.m
 import { listInstalled } from '../lib/plugins.mjs'
 import { scanAll } from '../lib/touchpoints.mjs'
 import { readToolSurface, diffToolSurface } from '../lib/tool-surface.mjs'
+import { buildSupportBundle } from '../lib/support-bundle.mjs'
+import { buildSnapshot, diffSnapshots, readSnapshot, snapshotFileName } from '../lib/snapshot.mjs'
+import { captureState, listStates, readState, diffStates, writeState } from '../lib/state-snapshot.mjs'
 import { openAsar } from '../lib/asar.mjs'
 import { detectGhost } from '../lib/ghost.mjs'
 import { readFeedConfig, fetchFeed, versionDistance } from '../lib/feed.mjs'
@@ -43,6 +46,10 @@ const flag = (name) => argv.includes(`--${name}`)
 const asJson = flag('json')
 const profileDir = opt('profile', defaultProfileDir())
 const installRoot = opt('root', undefined)
+// Tests and diagnostics may analyse a throwaway profile; without this they all
+// write one shared `last-report.json` and the panel then shows a report about a
+// tree that no longer exists.
+const cacheRoot = opt('cache', CACHE_ROOT)
 
 function out (r) {
   if (asJson) console.log(JSON.stringify(r, null, 2))
@@ -58,7 +65,7 @@ function fail (message, extra = {}) {
 const ANALYSE_OPTS = {
   profileDir,
   installRoot,
-  cacheRoot: CACHE_ROOT,
+  cacheRoot,
   keepTemp: flag('keep-temp'),
   force: flag('force'),
 }
@@ -130,7 +137,7 @@ if (cmd === 'check' && flag('remote')) {
   // Also publish the result the settings panel reads, so a manual check shows
   // up there without waiting for the next startup pass.
   if (r.stage === 'analysed') {
-    try { saveReport(CACHE_ROOT, r) } catch { /* panel just keeps the old one */ }
+    try { saveReport(cacheRoot, r) } catch { /* panel just keeps the old one */ }
   }
   if (asJson) out(r)
   else printReport(r)
@@ -490,6 +497,148 @@ if (cmd === 'check' && flag('remote')) {
       console.log('')
     }
   }
+} else if (cmd === 'snapshot') {
+  // A readable record of "what this machine looked like", for comparing after an
+  // update goes wrong. Description only: nothing here restores anything.
+  if (flag('list')) {
+    const rows = listStates(PKG_DIR)
+    if (asJson) out({ ok: true, snapshots: rows })
+    else {
+      console.log('\n=== 状态快照 ===\n')
+      if (rows.length === 0) console.log('（空。用 snapshot 生成一份）')
+      for (const r of rows) {
+        console.log('  ' + (r.at ?? '?') + '  DSH ' + (r.dsh ?? '?') + '  ' +
+          String(r.plugins ?? '?').padStart(2) + ' 个插件  ' + (r.note || '') +
+          (r.error ? '  [读不出: ' + r.error + ']' : ''))
+      }
+      console.log('')
+    }
+  } else if (flag('diff')) {
+    const i = argv.indexOf('--diff')
+    const a = argv[i + 1]
+    const b = argv[i + 2]
+    if (!a || !b) fail('用法: snapshot --diff <旧.json> <新.json>')
+    let before, after
+    try { before = readState(a) } catch (e) { fail('读不出旧快照: ' + (e instanceof Error ? e.message : e)) }
+    try { after = readState(b) } catch (e) { fail('读不出新快照: ' + (e instanceof Error ? e.message : e)) }
+    const d = diffStates(before, after)
+    if (asJson) out({ ok: true, before: before.createdAt, after: after.createdAt, ...d })
+    else printStateDiff(d)
+  } else {
+    let guardVersion
+    try { guardVersion = JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8')).version } catch { guardVersion = null }
+    const state = captureState({
+      profileDir,
+      installRoot: installRoot ?? findInstallRoot(),
+      pkgDir: PKG_DIR,
+      guardVersion,
+      note: opt('note', ''),
+    })
+    const path = writeState(PKG_DIR, state)
+    if (asJson) out({ ok: true, path, state })
+    else {
+      console.log('\n=== 状态快照已保存 ===\n')
+      console.log(`路径   : ${path}`)
+      console.log(`DSH    : ${state.dsh.version}`)
+      console.log(`插件   : ${state.plugins.length} 个`)
+      console.log(`配置   : ${JSON.stringify(state.guard.config)}`)
+      console.log('\n它不是还原源。要对照，用 snapshot --diff <旧> <新>。\n')
+    }
+  }
+} else if (cmd === 'surfaces') {
+  // Interface snapshots: the compare-able part of a release, without the 200 MB
+  // archive. Kept as a sub-command so `check` stays the only mutating path.
+  const sub = argv[1]
+  const dir = opt('dir', join(PKG_DIR, 'baselines'))
+
+  if (sub === 'export') {
+    const asarPath = opt('asar', undefined)
+    if (!asarPath) fail('surfaces export 需要 --asar <app.asar>')
+    if (!existsSync(asarPath)) fail('找不到归档：' + asarPath)
+    let guardVersion
+    try { guardVersion = JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8')).version } catch { guardVersion = null }
+    const snap = buildSnapshot(asarPath, { version: opt('version', undefined), guardVersion })
+    mkdirSync(dir, { recursive: true })
+    const outPath = join(dir, opt('name', snapshotFileName(snap)))
+    writeFileSync(outPath, JSON.stringify(snap, null, 2) + '\n', 'utf8')
+    const body = { ok: true, path: outPath, version: snap.dsh.version, counts: snap.counts }
+    if (asJson) out(body)
+    else {
+      console.log('\n=== 接口面快照 ===\n')
+      console.log(`版本   : ${snap.dsh.version}`)
+      console.log(`归档   : ${asarPath}`)
+      console.log(`模块   : ${snap.counts.modules} 个，成员 ${snap.counts.members}`)
+      console.log(`服务   : ${snap.counts.services} 个（${snap.counts.servicesWithMethods} 个有方法集，共 ${snap.counts.methods} 个方法）`)
+      console.log(`工具   : ${snap.counts.tools} 个`)
+      console.log(`写入   : ${outPath}\n`)
+    }
+  } else if (sub === 'list') {
+    let files = []
+    try { files = readdirSync(dir).filter(f => f.endsWith('.json')).sort() } catch { /* no dir yet */ }
+    const rows = []
+    for (const f of files) {
+      try {
+        const s = readSnapshot(join(dir, f))
+        rows.push({ file: f, version: s.dsh?.version ?? '?', at: s.createdAt ?? '?', counts: s.counts ?? {} })
+      } catch (e) {
+        rows.push({ file: f, version: '?', error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    if (asJson) out({ ok: true, dir, snapshots: rows })
+    else {
+      console.log('\n=== 快照库 ===\n')
+      console.log(`目录 : ${dir}`)
+      if (rows.length === 0) console.log('（空。用 surfaces export --asar <app.asar> 生成）')
+      for (const r of rows) {
+        console.log('  ' + r.file.padEnd(28) + ' ' + r.version + (r.error ? '  [读不出: ' + r.error + ']' : '  ' + (r.at ?? '')))
+      }
+      console.log('')
+    }
+  } else if (sub === 'diff') {
+    const a = opt('before', argv[2])
+    const b = opt('after', argv[3])
+    if (!a || !b) fail('用法: surfaces diff <旧快照.json> <新快照.json>')
+    let before, after
+    try { before = readSnapshot(a) } catch (e) { fail('读不出旧快照: ' + (e instanceof Error ? e.message : e)) }
+    try { after = readSnapshot(b) } catch (e) { fail('读不出新快照: ' + (e instanceof Error ? e.message : e)) }
+    const d = diffSnapshots(before, after)
+    const body = { ok: true, before: before.dsh, after: after.dsh, ...d }
+    if (asJson) out(body)
+    else printSnapshotDiff(before, after, d)
+  } else {
+    console.log([
+      '用法: node bin/guard.mjs surfaces <子命令>',
+      '',
+      '  export --asar <app.asar> [--dir <目录>] [--version <版本>]   把一个版本的接口面存成 JSON',
+      '  list   [--dir <目录>]                                       列出已有快照',
+      '  diff   <旧.json> <新.json>                                   比较两个快照（新增/移除）',
+      '',
+    ].join('\n'))
+    process.exit(1)
+  }
+} else if (cmd === 'support-bundle') {
+  // Paste-ready diagnosis for an issue report.
+  //
+  // This exists because the binding constraint on this project is not code, it
+  // is version pairs: almost every real bug is "DSH A + guard B + plugin C",
+  // and a report that only says "it broke" cannot be reproduced. One command is
+  // the difference between a usable report and a five-file back-and-forth.
+  const bundle = buildSupportBundle({
+    pkgDir: PKG_DIR,
+    profileDir,
+    installRoot: installRoot ?? findInstallRoot(),
+    cacheRoot,
+    ghost: flag('ghost'),
+  })
+  const outPath = opt('out', undefined)
+  if (outPath) {
+    writeFileSync(outPath, asJson ? JSON.stringify(bundle.data, null, 2) : bundle.markdown, 'utf8')
+    console.log(`已写入 ${outPath}`)
+  } else if (asJson) {
+    out(bundle.data)
+  } else {
+    console.log('\n' + bundle.markdown + '\n')
+  }
 } else {
   console.log([
     '用法: node bin/guard.mjs <命令> [选项]',
@@ -501,10 +650,14 @@ if (cmd === 'check' && flag('remote')) {
     '  status    当前状态',
     '  cookie    看 dsh-auth cookie 条数  --prune 清理（需先关 DSH）',
     '  config    查看/修改配置   --set <key> --value <v>',
+    '  support-bundle  导出一段可贴进 Issue 的脱敏诊断  --out <file> --ghost',
+    '  surfaces   export / list / diff 接口面快照（不保存整个 app.asar）',
+    '  snapshot   升级前状态快照  --list / --diff <旧> <新> / --note <文字>',
     '',
     '选项:',
     '  --profile <dir>   指定 profile 目录',
     '  --root <dir>      指定 DSH 安装目录（含 resources\\app-update.yml）',
+    '  --cache <dir>     指定缓存目录（默认 <插件>/.cache；测试用，避免污染真实报告）',
     '  --json            机器可读输出',
     '  --force           忽略接口面缓存，重新解包',
     '',
@@ -605,6 +758,7 @@ function printReport (r) {
         }
       }
       for (const sname of f.softUnknown ?? []) names.push('宿主服务待确认 ' + sname)
+      for (const u of f.methodUnknown ?? []) names.push('服务方法待确认 ' + u.service + '.' + u.method)
       for (const item of f.unverified ?? []) names.push('接口面未能解析 ' + item.moduleName)
       console.log('  · ' + f.plugin + '  ——  ' + (names.join('，') || '存在未验证项'))
     }
@@ -620,6 +774,73 @@ function printReport (r) {
   console.log('要只锁定确定失效的这几个：')
   console.log('    node "' + join(PKG_DIR, 'bin', 'guard.mjs') + '" lock')
   console.log('')
+}
+
+function printSnapshotDiff (before, after, d) {
+  const line = (s = '') => console.log(s)
+  line('')
+  line('=== 接口面差异 ===')
+  line('')
+  line(`旧 : ${before.dsh?.version ?? '?'}  (${before.createdAt ?? '?'})`)
+  line(`新 : ${after.dsh?.version ?? '?'}  (${after.createdAt ?? '?'})`)
+  line('')
+
+  const lostMembers = d.modules.filter(m => m.removed.length > 0)
+  line(`模块成员移除：${lostMembers.length} 个模块`)
+  for (const m of lostMembers) line(`  - ${m.module}: ${m.removed.join(', ')}`)
+  const addedOnly = d.modules.filter(m => m.removed.length === 0 && m.added.length > 0)
+  if (addedOnly.length > 0) line(`仅新增成员：${addedOnly.length} 个模块（不影响已装插件）`)
+  line('')
+
+  line(`宿主服务移除：${d.services.removed.length} 个` +
+    (d.services.removed.length > 0 ? ' → ' + d.services.removed.join(', ') : ''))
+  const methodLoss = d.services.methods.filter(m => m.removed.length > 0)
+  line(`服务方法移除：${methodLoss.length} 个服务`)
+  for (const m of methodLoss) line(`  - ${m.service}: ${m.removed.join(', ')}`)
+  line('')
+
+  line(`工具移除：${d.tools.removed.length} 个` +
+    (d.tools.removed.length > 0 ? ' → ' + d.tools.removed.join(', ') : ''))
+  const paramLoss = d.tools.changed.filter(c => c.lostParams.length > 0 || c.newlyRequired.length > 0)
+  line(`工具参数变化：${paramLoss.length} 个`)
+  for (const c of paramLoss) {
+    if (c.lostParams.length > 0) line(`  - ${c.name} 少了参数: ${c.lostParams.join(', ')}`)
+    if (c.newlyRequired.length > 0) line(`  - ${c.name} 变必填: ${c.newlyRequired.join(', ')}`)
+  }
+  line('')
+  line(d.breaking
+    ? '结论：有破坏性变化（成员 / 服务 / 方法 / 工具至少一项消失）'
+    : '结论：只有新增或描述变化，没有发现破坏性移除')
+  line('')
+}
+
+function printStateDiff (d) {
+  const line = (s = '') => console.log(s)
+  line('')
+  line('=== 状态差异 ===')
+  line('')
+  line(`DSH   : ${d.dsh.before ?? '?'} → ${d.dsh.after ?? '?'}`)
+  line('')
+  line(`插件变化：${d.plugins.length} 个`)
+  for (const p of d.plugins) {
+    const what = p.change === 'added'
+      ? '新增 ' + (p.after ?? '')
+      : p.change === 'removed'
+        ? '移除 ' + (p.before ?? '')
+        : (p.before ?? '?') + ' → ' + (p.after ?? '?')
+    line(`  ${p.name}  ${what}`)
+  }
+  line('')
+  line(`bundles 列表：新增 ${d.bundles.added.length} / 移除 ${d.bundles.removed.length}`)
+  for (const x of d.bundles.added) line('  + ' + x)
+  for (const x of d.bundles.removed) line('  - ' + x)
+  line('')
+  line(`配置变化：${d.config.length} 项`)
+  for (const c of d.config) line(`  ${c.key}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`)
+  line('')
+  line(`runtime：${d.runtime.before ?? '?'} → ${d.runtime.after ?? '?'} 个文件` + (d.runtime.changed ? '（有变化）' : '（一致）'))
+  line(`待安装更新：${d.pending.before ?? '无'} → ${d.pending.after ?? '无'}`)
+  line('')
 }
 
 function printLock (r, result) {
