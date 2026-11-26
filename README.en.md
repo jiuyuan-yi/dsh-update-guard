@@ -99,7 +99,7 @@ A launcher shim on the desktop (`wscript` + hidden window, no console flash):
 runtime restore     10.2s, 6144 files, SKILL.md back
 extraction + read   5.2s, 951,974 characters of shell bundle
 cache reuse         second run on the same package does not re-extract (asar mtime unchanged)
-tests               39 suites, all pass with a real install; 3 skip on a machine without one (a skip is not a pass)
+tests               41 suites, all pass with a real install; 3 skip on a machine without one (a skip is not a pass)
 real crash          4 crashes on 2026-11-05; boots normally after this plugin restores runtime
 ```
 

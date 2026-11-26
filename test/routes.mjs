@@ -17,12 +17,15 @@ function check (label, cond, detail = '') {
 }
 
 /** Minimal Node-ish request/response pair. */
-function call (handler, { method = 'GET', body, url } = {}) {
+function call (handler, { method = 'GET', body, url, headers } = {}) {
   return new Promise((resolve) => {
     const listeners = {}
     const req = {
       method,
       url: url ?? '/',
+      // Writes carry JSON by default; a few cases override this to prove the
+      // content-type requirement actually bites.
+      headers: headers ?? { 'content-type': 'application/json' },
       on (ev, fn) { (listeners[ev] ??= []).push(fn); return req },
       destroy () { },
     }
@@ -180,6 +183,34 @@ try {
     check('service-absent 留在 advisory', (r.body.advisory || []).includes('beta'), JSON.stringify(r.body.advisory))
     check('撤销记录只含 alpha', JSON.stringify(guardedIds(dir)) === JSON.stringify(['alpha']), JSON.stringify(guardedIds(dir)))
     check('patch 文件确实改了', readFileSync(patchPath, 'utf8') !== before)
+  }
+
+  console.log('\n[12] 写操作只接受本机来源')
+  {
+    const evil = { origin: 'https://evil.example', 'content-type': 'application/json' }
+    const r1 = await call(h.putConfig, { method: 'PUT', body: JSON.stringify({ autoLock: true }), headers: evil })
+    check('外站 Origin 被拒', r1.status === 403, String(r1.status))
+
+    const lockHandler = createHandlers(dir, () => ({ stage: 'no-pending' }))
+    const r2 = await call(lockHandler.postLock, { method: 'POST', headers: { origin: 'https://evil.example' } })
+    check('外站 Origin 不能触发锁定', r2.status === 403, String(r2.status))
+
+    const r3 = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { 'content-type': 'text/plain' },
+    })
+    check('text/plain 被拒（CORS 简单请求可绕过预检）', r3.status === 415, String(r3.status))
+
+    const r4 = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { origin: 'http://127.0.0.1:62448', 'content-type': 'application/json' },
+    })
+    check('本机 Origin 放行', r4.status === 200, String(r4.status))
+
+    const r5 = await call(h.putConfig, { method: 'PUT', body: JSON.stringify({ autoLock: true }) })
+    check('无 Origin 头（CLI/同源）放行', r5.status === 200, String(r5.status))
   }
 } finally {
   rmSync(dir, { recursive: true, force: true })

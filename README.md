@@ -99,7 +99,7 @@ DesktopHostFatalError: ENOENT: no such file or directory, open
 runtime 恢复        10.2 秒，6144 个文件，SKILL.md 回来
 解包读取            5.2 秒，951,974 字符的 shell bundle
 缓存复用            同包第二次不重解（asar mtime 不变）
-测试                39 项，本机全过；没有真实安装的环境里 3 项会跳过（不算通过）
+测试                41 项，本机全过；没有真实安装的环境里 3 项会跳过（不算通过）
 真实崩溃            2026-11-05 连崩四次，本插件恢复后正常启动
 ```
 
