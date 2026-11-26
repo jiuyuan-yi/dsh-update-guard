@@ -3,6 +3,7 @@
 **DSH 桌面端更新守卫：更新前查插件会不会崩，崩了能自己修回来。**
 
 [![ci](https://github.com/jiuyuan-yi/dsh-update-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/jiuyuan-yi/dsh-update-guard/actions/workflows/ci.yml)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/jiuyuan-yi/dsh-update-guard)
 
 [English](README.en.md) · 中文
 

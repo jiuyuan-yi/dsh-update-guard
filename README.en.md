@@ -3,6 +3,7 @@
 **A guard for DSH desktop updates: check whether an update will break your plugins before you install it, and recover when it does.**
 
 [![ci](https://github.com/jiuyuan-yi/dsh-update-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/jiuyuan-yi/dsh-update-guard/actions/workflows/ci.yml)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/jiuyuan-yi/dsh-update-guard)
 
 English · [中文](README.md)
 
