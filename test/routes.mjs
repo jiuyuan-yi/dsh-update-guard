@@ -209,6 +209,36 @@ try {
     })
     check('本机 Origin 放行', r4.status === 200, String(r4.status))
 
+    // A prefix check would let this through: `new URL(...).hostname` is the only
+    // thing that separates localhost from localhost.evil.com.
+    const r4b = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { origin: 'http://localhost.evil.com', 'content-type': 'application/json' },
+    })
+    check('localhost.evil.com 被拒', r4b.status === 403, String(r4b.status))
+
+    const r4c = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { origin: 'http://127.0.0.1.evil.com', 'content-type': 'application/json' },
+    })
+    check('127.0.0.1.evil.com 被拒', r4c.status === 403, String(r4c.status))
+
+    const r4d = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { origin: 'null', 'content-type': 'application/json' },
+    })
+    check('Origin: null 被拒', r4d.status === 403, String(r4d.status))
+
+    const r4e = await call(h.putConfig, {
+      method: 'PUT',
+      body: JSON.stringify({ autoLock: true }),
+      headers: { origin: 'http://[::1]:62448', 'content-type': 'application/json' },
+    })
+    check('IPv6 回环放行', r4e.status === 200, String(r4e.status))
+
     const r5 = await call(h.putConfig, { method: 'PUT', body: JSON.stringify({ autoLock: true }) })
     check('无 Origin 头（CLI/同源）放行', r5.status === 200, String(r5.status))
   }
