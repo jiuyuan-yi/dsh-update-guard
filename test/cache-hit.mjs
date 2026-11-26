@@ -1,5 +1,5 @@
 /** The cache must actually be reused: a miss re-extracts a 276 MB installer. */
-import { mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readdirSync, linkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadOrExtractSurface } from '../lib/installer.mjs'
@@ -47,6 +47,38 @@ try {
   const files = readdirSync(cacheRoot).filter(f => f.startsWith('surface-v2-'))
   check('缓存文件只有一个', files.length === 1, files.join(','))
 } finally { rmSync(root, { recursive: true, force: true }) }
+
+console.log('\n[2] 缓存键：文件身份，不是文件元数据')
+{
+  const dir = join(tmpdir(), `cachekey-${process.pid}`)
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'installer.exe')
+  writeFileSync(file, 'x'.repeat(2048))
+  try {
+    const before = cacheKeyOf(file)
+
+    // A hard link updates ctime on NTFS, and runtime self-heal creates one to
+    // keep its own installer copy. An antivirus scan touches it too. Neither
+    // changes the bytes, so neither may invalidate a 290 MB extraction.
+    try {
+      linkSync(file, join(dir, 'hardlink.exe'))
+      check('建硬链接后键不变', cacheKeyOf(file) === before, before + ' -> ' + cacheKeyOf(file))
+    } catch {
+      console.log('  （硬链接不可用，跳过该断言）')
+    }
+
+    const a = cacheKeyOf(file, 'sha512-aaa')
+    const b = cacheKeyOf(file, 'sha512-bbb')
+    check('sha512 参与键', a !== b)
+    check('有 sha512 时不再看 stat', a !== before)
+
+    const later = new Date(Date.now() + 5000)
+    utimesSync(file, later, later)
+    check('mtime 变化会换键', cacheKeyOf(file) !== before)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 console.log('')
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`)

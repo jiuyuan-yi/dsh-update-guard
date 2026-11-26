@@ -41,6 +41,13 @@ console.log('\n[2] 范围匹配')
   check('|| 并集', satisfies('0.1.0', '<0.1.5 || >=0.2.0') === true)
   check('看不懂的范围返回 undefined', satisfies('0.2.1', 'banana') === undefined)
   check('^0.0.3 上限是 0.0.4', satisfies('0.0.4', '^0.0.3') === false)
+  // npm semantics: the upper bound carries a `-0`, so a prerelease of the NEXT
+  // version is outside the range. With a plain `0.3.0` bound, `0.3.0-rc.1`
+  // compares below it and slips through — the exact case a project shipping only
+  // rc builds hits on every minor bump.
+  check('^0.2.3 拒绝下个版本的预发布', satisfies('0.3.0-rc.1', '^0.2.3') === false)
+  check('~0.2.3 拒绝 0.3.0-rc.1', satisfies('0.3.0-rc.1', '~0.2.3') === false)
+  check('^1.2.3 拒绝 2.0.0-rc.1', satisfies('2.0.0-rc.1', '^1.2.3') === false)
 }
 
 console.log('\n[3] 声明字段优先级')
@@ -77,6 +84,33 @@ console.log('\n[4] 扫描 profile')
     check('看不懂的范围单列', r.findings.some(f => f.plugin === 'weird' && f.kind === 'unknown-range'))
     check('路径穿越 bundle 被拒绝', r.findings.some(f => f.plugin === '../outside' && f.kind === 'invalid-package-name'))
     check('非字符串 bundle 被拒绝', r.findings.some(f => f.plugin === '7' && f.kind === 'invalid-package-name'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+console.log('\n[5] 预发布：只降级"真的是预发布语义"的那一种')
+{
+  const dir = join(tmpdir(), `guard-pre-${process.pid}`)
+  mkdirSync(join(dir, 'node_modules'), { recursive: true })
+  try {
+    const mk = (name, range) => {
+      const d = join(dir, 'node_modules', name)
+      mkdirSync(d, { recursive: true })
+      writeFileSync(join(d, 'package.json'), JSON.stringify({ name, peerDependencies: { '@deepseek-ai/dsh': range } }))
+    }
+    // Formal 0.2.3 satisfies ^0.2.3, only the prerelease tag fails -> ambiguous.
+    mk('caret', '^0.2.3')
+    // Formal 0.2.3 does not satisfy >=0.3.0 either -> a real mismatch.
+    mk('floor', '>=0.3.0')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['caret', 'floor'] } } }))
+
+    const r = checkDeclaredRanges(dir, '0.2.3-rc.5')
+    check('caret 记为预发布歧义',
+      r.findings.some(f => f.plugin === 'caret' && f.kind === 'prerelease-ambiguous'),
+      JSON.stringify(r.findings.map(f => f.plugin + ':' + f.kind)))
+    check('floor 仍是真不匹配',
+      r.findings.some(f => f.plugin === 'floor' && f.kind === 'range-mismatch'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

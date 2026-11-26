@@ -271,7 +271,7 @@ node bin/guard.mjs snapshot --diff <old> <new>
 
 ## What it will not do
 
-- No network access, no telemetry
+- No network access by default, no telemetry. The single exception is `check --remote`: it reads the published version from the update feed once — no download, no disk write, nothing about this machine sent anywhere
 - Does not touch plugin code; only flips `disabled` in `cordis.patch.yml`, byte-for-byte reversible
 - Does not rewrite `!!js` conditional values (loader expressions; rewriting breaks semantics)
 - Does not judge itself
