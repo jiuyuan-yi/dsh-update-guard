@@ -54,8 +54,15 @@ try {
     dsh: { profile: { bundles: [] } },
   }))
 
+  // An explicit (empty) install root keeps the result the same on a runner with
+  // no DSH installed: without it `analyse` returns stage=error and the suite
+  // would be asserting machine state rather than worker behaviour.
+  const fakeInstall = join(work, 'fake-install')
+  mkdirSync(fakeInstall, { recursive: true })
+  const workerData = { profileDir: profile, cacheRoot, installRoot: fakeInstall }
+
   console.log('\n[1] 正常返回结构化结果')
-  const result = await runWorker({ profileDir: profile, cacheRoot })
+  const result = await runWorker(workerData)
   check('返回对象', result !== null && typeof result === 'object')
   check('有 stage', typeof result.stage === 'string', String(result.stage))
   check('没有待安装更新时是 no-pending', result.stage === 'no-pending', String(result.stage))
@@ -66,7 +73,7 @@ try {
     // or that only works the first time, would show up as rising thread counts
     // after a few restarts.
     for (let i = 0; i < 3; i += 1) {
-      const again = await runWorker({ profileDir: profile, cacheRoot })
+      const again = await runWorker(workerData)
       check(`第 ${i + 2} 次仍返回同一结论`, again.stage === result.stage, String(again.stage))
     }
   }
@@ -75,7 +82,7 @@ try {
   {
     let ticks = 0
     const interval = setInterval(() => { ticks += 1 }, 5)
-    await runWorker({ profileDir: profile, cacheRoot })
+    await runWorker(workerData)
     clearInterval(interval)
     // A synchronous analyse on this thread would starve the timer almost
     // entirely; a worker leaves the loop free. Anything above zero proves the
