@@ -6,7 +6,7 @@
 import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { surfaceOf, TRACKED } from '../lib/surface.mjs'
+import { surfaceOf, TRACKED, canarySuspicious, CANARY } from '../lib/surface.mjs'
 import { analyse, lockFromAnalysis } from '../lib/run.mjs'
 
 let failures = 0
@@ -60,6 +60,35 @@ try {
   check('模块表整体解析失败时明确标记待验证', TRACKED.every(name => emptyReport.surfaceUnverifiedModules.includes(name)))
 } finally {
   rmSync(dir, { recursive: true, force: true })
+}
+
+console.log('\n[canary] 解析取错标识符时降级为 unknown，而不是报一片缺失')
+{
+  const good = {
+    modules: Object.fromEntries(Object.entries(CANARY).map(([mod, names]) => [mod, { members: [names[0]] }])),
+  }
+  check('金丝雀齐全时不报警', canarySuspicious(good).length === 0, canarySuspicious(good).join(','))
+
+  // A parse that latched onto the wrong symbol returns unrelated names.
+  const garbage = {
+    modules: Object.fromEntries(Object.keys(CANARY).map(mod => [mod, { members: ['a', 'b', 'c'] }])),
+  }
+  const bad = canarySuspicious(garbage)
+  check('全员不认识时全部标记', bad.length === Object.keys(CANARY).length, bad.join(','))
+
+  // An empty list is "the scanner got nothing" — that is a different problem and
+  // is already reported as uncertain. It must not be double-reported here.
+  const empty = { modules: Object.fromEntries(Object.keys(CANARY).map(mod => [mod, { members: [] }])) }
+  check('空成员表不在这里报', canarySuspicious(empty).length === 0)
+
+  check('surface 缺失不抛', canarySuspicious(undefined).length === 0)
+  check('modules 缺失不抛', canarySuspicious({}).length === 0)
+
+  // Only one canary is needed: a single rename must not cause a mass false alarm.
+  const renamed = {
+    modules: { [Object.keys(CANARY)[0]]: { members: [CANARY[Object.keys(CANARY)[0]][1]] } },
+  }
+  check('只要命中一个金丝雀就算可信', canarySuspicious(renamed).length === 0)
 }
 
 console.log('')

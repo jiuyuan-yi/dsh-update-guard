@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 
 
 import {
   analyse, lockFromAnalysis, unlockAll, readConfig, writeConfig, defaultProfileDir, saveReport,
+  guardedIds, lockTarget,
 } from '../lib/run.mjs'
 import { planRestore, applyRestore } from '../lib/restore.mjs'
 import { diagnoseRestore } from '../lib/diagnose.mjs'
@@ -344,8 +345,15 @@ if (cmd === 'check' && flag('remote')) {
     pending: r.pending ?? null,
     installedPlugins: r.checkedPlugins ?? 0,
     guarded: r.guarded ?? [],
+    lockTarget: lockTarget(profileDir),
+    installedVersion: r.installedVersion ?? null,
     config,
   }
+  // A lock never expires on its own. Once the version it was aimed at is the one
+  // installed, the reason for it is gone and the user should be told.
+  body.unlockNow = body.guarded.length > 0 &&
+    body.lockTarget !== null &&
+    body.lockTarget === body.installedVersion
   if (asJson) out(body)
   else {
     console.log('\n=== 状态 ===\n')
@@ -354,6 +362,8 @@ if (cmd === 'check' && flag('remote')) {
     console.log(`待安装更新  : ${body.pending ? body.pending.version : '无'}`)
     console.log(`已装插件    : ${body.installedPlugins}`)
     console.log(`已锁定      : ${body.guarded.length ? body.guarded.join(', ') : '无'}`)
+    console.log(`锁定目标    : ${body.lockTarget ?? '(未记录)'}${body.unlockNow ? '  ← 已装同版本，可以解锁' : ''}`)
+    console.log(`已装版本    : ${body.installedVersion ?? '(未知)'}`)
     console.log(`自动锁定    : ${config.autoLock ? '开' : '关'}`)
     console.log(`启动自检    : ${config.preflightOnStartup ? '开' : '关'}\n`)
   }
