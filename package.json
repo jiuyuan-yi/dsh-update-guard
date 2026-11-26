@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-guard",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "scripts": {
     "test": "node test/all.mjs"
@@ -18,7 +18,7 @@
   "dsh": {
     "id": "dsh-update-guard",
     "name": "更新守卫",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -53,7 +53,8 @@
     "CHANGELOG-0.4.5.md",
     "CHANGELOG-0.5.0.md",
     "CHANGELOG-0.5.1.md",
-    "CHANGELOG-0.5.2.md"
+    "CHANGELOG-0.5.2.md",
+    "CHANGELOG-0.5.3.md"
   ],
   "keywords": [
     "dsh",
